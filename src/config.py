@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
 from omegaconf import MISSING, DictConfig
+from enum import Enum
 
 
 @dataclass
@@ -153,6 +154,31 @@ class VocabularyCurriculumParams(DictConfig):
 
     pacing_fn_kwargs: PacingFunctionParams
 
+# Plasticity decay for sleep mechanism
+class PlasticityDecayType(str, Enum):
+    lr_decay = "lr_decay"
+    freeze_layers = "freeze_layers"
+    pruning = "pruning"
+
+
+# Sleep mechanism params
+@dataclass
+class SleepMechanismParams(DictConfig):
+    # Number of steps to train on new data before entering sleep
+    wake_block_steps: int
+    # Maximum number of steps allowed in a sleep phase
+    sleep_max_steps: int
+    # Target loss value to exit sleep phase early
+    # SHOULD WE MAKE THIS OPTIONAL??
+    # sleep_loss_threshold: Optional[float] = None
+    sleep_loss_threshold: float
+    # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
+    replay_ratio: float = 0.1
+    # Plasticity decay type
+    plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
+    # Factor by which to decay plasticity
+    plasticity_decay_rate: float = 0.9
+
 
 ### Container for entire config ###
 
@@ -168,3 +194,5 @@ class BabyLMConfig(DictConfig):
     objective_curriculum: ObjectiveCurriculumParams
     data_curriculum: Optional[DataCurriculumParams] = None
     vocabulary_curriculum: Optional[VocabularyCurriculumParams] = None
+
+    sleep_mechanism: Optional[SleepMechanismParams] = None
