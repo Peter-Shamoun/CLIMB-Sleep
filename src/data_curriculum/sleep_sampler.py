@@ -15,6 +15,7 @@ class SleepSampler(Sampler):
         dataset: Dataset,
         batch_size: int,
         replay_ratio: float = 0.1,
+        n_phases: int = 5
     ) -> None:
         """
         Args:
@@ -25,15 +26,24 @@ class SleepSampler(Sampler):
         self.dataset = dataset
         self.batch_size = batch_size
         self.replay_ratio = replay_ratio
+        self.n_phases = n_phases
 
         self.phase = "WAKE"
         self.replay_buffer: List[int] = []  # Stores indices for sleep
         # Stores {index: loss} during wake to determine difficulty
         self.wake_candidates: dict[int, float] = {}
 
-        # WAKE phase state
         self.dataset_indices = list(range(len(dataset))) # type: ignore
         random.shuffle(self.dataset_indices)
+        
+        # Split indices into n_phases folds
+        self.curr_fold = 0
+        self.fold_size = len(self.dataset_indices) // self.n_phases
+        self.folds = [
+            self.dataset_indices[i: i + self.fold_size]
+            for i in range(0, len(self.dataset_indices), self.fold_size)
+        ]
+        
         self.wake_pointer = 0
         
     def __iter__(self):
@@ -42,14 +52,14 @@ class SleepSampler(Sampler):
         # If wake phase:
         #   Shuffle data in fold randomly
         #   append to batch until batch size is met
-        # If sleep phase:
-        #   Sample from replay buffer based on loss (higher loss = higher prob)
         if self.phase == "WAKE":
-            for i in self.dataset_indices:
+            for i in self.folds[self.curr_fold]:
                 batch.append(self.dataset[i])
                 if len(batch) == self.batch_size:
                     yield batch
                     batch = []
+        # If sleep phase:
+        #   Sample from replay buffer based on loss (higher loss = higher prob) 
         elif self.phase == "SLEEP":
             if not self.replay_buffer:
                 # No data to replay, switch back to WAKE
@@ -67,10 +77,11 @@ class SleepSampler(Sampler):
                 weights=probabilities,
                 k=len(self.replay_buffer)
             )
-
             for idx in sampled_indices:
                 batch.append(self.dataset[idx])
                 if len(batch) == self.batch_size:
+                    # Contextualize batch before yielding
+                    batch = self.contextualize_batch(batch)
                     yield batch
                     batch = []
 
@@ -94,6 +105,8 @@ class SleepSampler(Sampler):
         """
         Toggle between WAKE and SLEEP modes.
         When switching to SLEEP, populates replay_buffer from wake_candidates.
+        When switching to WAKE, clears replay_buffer and wake_candidates and 
+        advances the fold for the next phase.
         Args:
             new_phase: Either "WAKE" or "SLEEP"
         """
@@ -126,10 +139,35 @@ class SleepSampler(Sampler):
             self.replay_buffer = []
             self.wake_candidates = {}
             # Reset dataset pointer for next wake phase
-            random.shuffle(self.dataset_indices)
+            self.curr_fold = (self.curr_fold + 1) % self.n_phases
             self.wake_pointer = 0
 
         self.phase = new_phase
 
     def __len__(self):
         return len(self.dataset)
+
+    def contextualize_batch(self, batch):
+        """
+        TODO: "contextualizes" replay buffer before sleep phase to make it more abstract
+        Args:
+            batch (_type_): batch of data to contextualize/shuffle
+        Returns:
+            _type_: contextualized batch
+        """
+        return batch
+    
+    def update_replay_buffer(self):
+        """
+        Updates the replay buffer with high-loss samples from the wake phase.
+        """
+        # Sort wake candidates by loss
+        sorted_candidates = sorted(
+            self.wake_candidates.items(),
+            key=lambda item: item[1],
+            reverse=True
+        )
+        num_replay = int(len(sorted_candidates) * self.replay_ratio)
+        self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_replay]]
+        # Clear wake candidates for next WAKE phase
+        self.wake_candidates.clear()
