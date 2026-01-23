@@ -54,6 +54,7 @@ from .data_curriculum.datasampler import (
     CurriculumSampler,
     DistributedCurriculumSampler,
 )
+from .data_curriculum.sleep_sampler import SleepSampler
 from .data_curriculum.difficulty_scorer import get_difficulty_scorer
 from .data_curriculum.pacing_fn import get_pacing_fn
 
@@ -95,6 +96,7 @@ class CurriculumLearningCallback(TrainerCallback):
             (CurriculumSampler, DistributedCurriculumSampler),
         ):
             train_dataloader.sampler.global_stepnum += 1
+        # Note: SleepSampler doesn't use global_stepnum, so we skip it
 
         train_dataloader.global_stepnum += 1
 
@@ -154,6 +156,7 @@ class CustomTrainer(Trainer):
         self.objective_curriculum_cfg = hydra_config.objective_curriculum
         self.data_curriculum_cfg = hydra_config.data_curriculum
         self.vocabulary_curriculum_cfg = hydra_config.vocabulary_curriculum
+        self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
         # We check that this variable is set in the config file when loading the base model
@@ -179,6 +182,10 @@ class CustomTrainer(Trainer):
         if self.vocabulary_curriculum_cfg:
             data_cl_logger.info(
                 f"Using vocabulary curriculum {self.vocabulary_curriculum_cfg}"
+            )
+        if self.sleep_mechanism_cfg:
+            logger.info(
+                f"Using sleep mechanism configuration {self.sleep_mechanism_cfg}"
             )
 
         self.tokenizer = tokenizer
@@ -304,7 +311,16 @@ class CustomTrainer(Trainer):
             else self.args.seed
         )
 
-        if self.data_curriculum_cfg:
+        if self.sleep_mechanism_cfg:
+            # Sleep-consolidated learning: use SleepSampler for wake/sleep cycles
+            logger.info("Using SleepSampler for sleep-consolidated learning")
+            
+            return SleepSampler(
+                dataset=self.train_dataset,
+                batch_size=self.args.per_device_train_batch_size,
+                replay_ratio=self.sleep_mechanism_cfg.replay_ratio,
+            )
+        elif self.data_curriculum_cfg:
             # A data-driven curriculum assumes we are using a difficulty scorer along with a
             # curriculum pacing function to determine the order in which we sample data.
 
