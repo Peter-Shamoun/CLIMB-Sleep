@@ -22,6 +22,7 @@ class SleepSampler(Sampler):
             dataset: The dataset to sample from.
             batch_size: Batch size
             replay_ratio: Percentage of high-loss samples to keep for replay (e.g. 0.1).
+            n_phases: Number of wake-sleep cycles
         """
         self.dataset = dataset
         self.batch_size = batch_size
@@ -155,7 +156,10 @@ class SleepSampler(Sampler):
         Returns:
             _type_: contextualized batch
         """
-        return batch
+        # shuffle samples, similar to Contextualizer
+        shuffled_batch = batch.copy()
+        random.shuffle(shuffled_batch)
+        return shuffled_batch
     
     def update_replay_buffer(self):
         """

@@ -319,6 +319,7 @@ class CustomTrainer(Trainer):
                 dataset=self.train_dataset,
                 batch_size=self.args.per_device_train_batch_size,
                 replay_ratio=self.sleep_mechanism_cfg.replay_ratio,
+                n_phases=self.sleep_mechanism_cfg.n_phases,
             )
         elif self.data_curriculum_cfg:
             # A data-driven curriculum assumes we are using a difficulty scorer along with a
@@ -904,3 +905,56 @@ class CustomTrainer(Trainer):
                 )
 
         return model
+        
+    def train(self, resume_from_checkpoint=None, *args, **kwargs):
+        """
+        Override train to implement wake-sleep cycles when using sleep mechanism.
+        """
+
+        if not self.sleep_mechanism_cfg:
+            # standard training if not using sleep mechanism
+            return super().super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs)
+        
+        # sleep-consolidated training
+        logger.info("Starting Sleep-Consolidated Training")
+        logger.info(f"N phases: {self.sleep_mechanism_cfg.n_phases}")
+        logger.info(f"Replay ratio: {self.sleep_mechanism_cfg.replay_ratio}")
+
+        sampler = self.get_train_dataloader().sampler
+
+        for cycle in range(self.sleep_mechanism_cfg.n_phases):
+            logger.info("\n")
+            logger.info(f"Cycle {cycle + 1} / {self.sleep_mechanism_cfg.n_phases}")
+            logger.info("\n")
+
+            # WAKE PHASE
+            logger.info(f"\n[WAKE PHASE] Training on fold {cycle} ...")
+            sampler.switch_phase("WAKE")
+
+            # train for one fold
+            if cycle == 0 and resume_from_checkpoint is not None:
+                super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs)
+            else:
+                super().train(*args, **kwargs)
+
+
+            # SLEEP PHASE
+            logger.info(f"\n[SLEEP PHASE] Consolidating difficult samples ...")
+            sampler.switch_phase("SLEEP")
+
+            if len(sampler.replay_buffer) > 0:
+                # train on replay buffer
+                sleep_steps = self.sleep_mechanism_cfg.sleep_max_steps
+
+                # modify max_steps for sleep phase
+                original_max_steps = self.args.max_steps
+                self.args.max_steps = self.state.global_step + sleep_steps
+
+                super().train(*args, **kwargs)
+
+                # revert to original max_steps
+                self.args.max_steps = original_max_steps
+
+                logger.info("Completed sleep consolidation.")
+
+            # TODO: Implement Plasticity Decay Mechanism
