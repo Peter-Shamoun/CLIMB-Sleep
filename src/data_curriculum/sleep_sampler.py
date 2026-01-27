@@ -15,7 +15,10 @@ class SleepSampler(Sampler):
         dataset: Dataset,
         batch_size: int,
         replay_ratio: float = 0.1,
-        n_phases: int = 5
+        n_phases: int = 5,
+        n_augmentations = 40,
+        max_seq_length: int = 128,
+        contextualize_sleep: bool = True,
     ) -> None:
         """
         Args:
@@ -23,11 +26,16 @@ class SleepSampler(Sampler):
             batch_size: Batch size
             replay_ratio: Percentage of high-loss samples to keep for replay (e.g. 0.1).
             n_phases: Number of wake-sleep cycles
+            n_augmentations: Number of augmentations for shuffling in Replay Buffer
         """
         self.dataset = dataset
         self.batch_size = batch_size
         self.replay_ratio = replay_ratio
         self.n_phases = n_phases
+        self.n_augmentations = n_augmentations
+        self.max_seq_length = max_seq_length
+        self.contextualize_sleep = contextualize_sleep
+        self.contextualized_chunks: List[List[int]] = [] 
 
         self.phase = "WAKE"
         self.replay_buffer: List[int] = []  # Stores indices for sleep
@@ -131,6 +139,9 @@ class SleepSampler(Sampler):
 
                 # Extract just the indices for replay buffer
                 self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_keep]]
+
+                if self.contextualize_sleep:
+                    self.contextualized_chunks = self.contextualize_sleep()
             else:
                 self.replay_buffer = []
 
@@ -139,6 +150,7 @@ class SleepSampler(Sampler):
             # Clear replay buffer and reset for new wake cycle
             self.replay_buffer = []
             self.wake_candidates = {}
+            self.contextualized_chunks = []
             # Reset dataset pointer for next wake phase
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
             self.wake_pointer = 0
@@ -148,18 +160,32 @@ class SleepSampler(Sampler):
     def __len__(self):
         return len(self.dataset)
 
-    def contextualize_batch(self, batch):
+    def contextualize_batch(self) -> List[List[int]]:
         """
-        TODO: "contextualizes" replay buffer before sleep phase to make it more abstract
-        Args:
-            batch (_type_): batch of data to contextualize/shuffle
+        "Contextualizes" replay buffer before sleep phase to make it more abstract
+
         Returns:
-            _type_: contextualized batch
+            List of shuffled orderings (each ordering is a list of indices)
         """
-        # shuffle samples, similar to Contextualizer
-        shuffled_batch = batch.copy()
-        random.shuffle(shuffled_batch)
-        return shuffled_batch
+        if not self.replay_buffer:
+            return []
+        
+        all_orderings = []
+
+        # create n_augmentations different shuffled orderings
+        for _ in range(self.n_augmentations):
+            # shuffle replay buffer differently each time
+            shuffled = self.replay_buffer.copy()
+            random.shuffle(shuffled)
+            all_orderings.append(shuffled)
+
+        # flatten: convert list of orderings into individual indices
+            # will allow __iter__ to yield them sequentially
+        flattened = []
+        for ordering in all_orderings:
+            flattened.extend(ordering)
+        
+        return [flattened]
     
     def update_replay_buffer(self):
         """

@@ -315,11 +315,16 @@ class CustomTrainer(Trainer):
             # Sleep-consolidated learning: use SleepSampler for wake/sleep cycles
             logger.info("Using SleepSampler for sleep-consolidated learning")
             
+            from src.data_curriculum.sleep_sampler import SleepSampler
+
             return SleepSampler(
                 dataset=self.train_dataset,
                 batch_size=self.args.per_device_train_batch_size,
                 replay_ratio=self.sleep_mechanism_cfg.replay_ratio,
                 n_phases=self.sleep_mechanism_cfg.n_phases,
+                max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
+                contextualize_sleep=True,
+                n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
             )
         elif self.data_curriculum_cfg:
             # A data-driven curriculum assumes we are using a difficulty scorer along with a
@@ -440,6 +445,31 @@ class CustomTrainer(Trainer):
         # ignore columns to the dataloader so that they are not included in the batch, but we
         # might want to use this information when generating the objective.
         ignore_columns = self._get_ignore_columns(train_dataset)
+
+        # check if using sleep mechanism w/ SleepSampler
+        if self.sleep_mechanism_cfg and isinstance(train_sampler, SleepSampler):
+            from src.data_curriculum.contextualize_collate import context_augmented_collate
+
+            # create collate function
+            def collate_fn(batch):
+                if train_sampler.phase == "SLEEP" and train_sampler.contextualize_batch:
+                    return context_augmented_collate(batch,
+                                                     max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
+                                                     pad_token_id=self.tokenizer.pad_token_id,
+                                                     cls_token_id=self.tokenizer.cls_token_id,
+                                                     sep_token_id=self.tokenizer.sep_token_id)
+                else:
+                    return base_collate_fn(batch)
+                
+            return DataLoader(
+                dataset=train_dataset,
+                sampler=train_sampler,
+                batch_size=self._train_batch_size,
+                collate_fn=collate_fn,
+                drop_last=self.args.dataloader_drop_last,
+                num_workers=0,
+                pin_memory=self.args.dataloader_pin_memory,
+            )
 
         assert (
             self.tokenizer is not None

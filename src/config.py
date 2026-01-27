@@ -178,7 +178,14 @@ class SleepMechanismParams(DictConfig):
     plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
     # Factor by which to decay plasticity
     plasticity_decay_rate: float = 0.9
-
+    # Number of context augmentations applied per batch
+    n_augmentations: int = 40
+    # Number of wake-sleep cycles
+    n_phases: int = 5
+    # Maximum sequence length for concatenation during sleep
+    max_seq_length: int = 128
+    # Whether to apply contextualization during sleep
+    contextualize_sleep: bool = True
 
 ### Container for entire config ###
 
