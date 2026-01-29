@@ -32,10 +32,10 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 from transformers.training_args import ParallelMode, TrainingArguments
-from transformers.utils import (
-    get_full_repo_name,
-    is_torch_neuroncore_available,
-)
+# from transformers.utils import (
+#     get_full_repo_name,
+#     is_torch_neuroncore_available,
+# )
 
 # Model Loading
 from src.models import load_base_model
