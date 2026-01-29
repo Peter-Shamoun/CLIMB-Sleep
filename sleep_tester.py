@@ -4,6 +4,7 @@ import os
 # config-related imports
 # import hydra
 import torch
+import numpy as np
 
 # training pipeline imports
 from datasets import DatasetDict, load_dataset
@@ -136,8 +137,8 @@ def main() -> None:
     print(sleep_sampler.replay_ratio)
     print(sleep_sampler.n_phases)
     
-    print(sleep_sampler.dataset_indices)
-    print(sleep_sampler.folds)
+    print(len(sleep_sampler.dataset_indices))
+    print(shape(np.array(sleep_sampler.folds)))
 
 if __name__ == "__main__":
     main()
