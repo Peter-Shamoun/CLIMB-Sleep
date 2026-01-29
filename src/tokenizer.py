@@ -28,7 +28,7 @@ def load_tokenizer(cfg: BabyLMConfig) -> PreTrainedTokenizerFast:
     }
 
     tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
-        cfg['tokenizer'].name,
+        cfg['tokenizer']['name'],
         use_auth_token=os.environ["HF_READ_TOKEN"],
         **tokenizer_kwargs,
     )  # type: ignore
