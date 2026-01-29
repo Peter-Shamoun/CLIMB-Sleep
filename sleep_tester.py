@@ -88,8 +88,7 @@ def main() -> None:
     logger.info("Loading dataset")
     dataset: DatasetDict = load_dataset(
         'cambridge-climb/BabyLM',
-        'strict_small',
-        use_auth_token=os.environ["HF_READ_TOKEN"],
+        'strict_small'
     )  # type: ignore
     
     assert isinstance(dataset, DatasetDict), "Dataset is not a DatasetDict"
