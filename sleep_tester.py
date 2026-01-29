@@ -138,7 +138,9 @@ def main() -> None:
     print(sleep_sampler.n_phases)
     
     print(len(sleep_sampler.dataset_indices))
-    print(np.array(sleep_sampler.folds).shape)
+    for fold in sleep_sampler.folds:
+        print(len(fold))
+    print()
 
 if __name__ == "__main__":
     main()
