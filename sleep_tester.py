@@ -65,6 +65,7 @@ def main() -> None:
             'include_punctuation': True,
             'join_sentences': True,
             'max_input_length': 128,
+            'callback_functions': None
         },
 
         'trainer':{
