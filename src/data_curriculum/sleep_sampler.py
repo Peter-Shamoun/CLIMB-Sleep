@@ -79,21 +79,14 @@ class SleepSampler(Sampler):
         elif self.phase == "SLEEP":
             if not self.replay_buffer:
                 # No data to replay, switch back to WAKE
+                print("Replay buffer empty, switching back to WAKE phase.")
                 self.phase = "WAKE"
                 self.wake_pointer = 0
                 return self.__iter__()
-
-            # Sample from replay buffer based on loss
-            losses = [self.wake_candidates[idx] for idx in self.replay_buffer]
-            total_loss = sum(losses)
-            probabilities = [loss / total_loss for loss in losses]
-
-            sampled_indices = random.choices(
-                self.replay_buffer,
-                weights=probabilities,
-                k=len(self.replay_buffer)
-            )
-            for i in sampled_indices:
+            
+            # shuffle and yield from contextualized replay buffer
+            random.shuffle(self.replay_buffer)
+            for i in self.replay_buffer:
                 batch.append(i)
                 if len(batch) == self.batch_size:
                     # Contextualize batch before yielding
@@ -134,20 +127,7 @@ class SleepSampler(Sampler):
             # Transitioning WAKE -> SLEEP
             # Process wake_candidates to fill replay_buffer
             if self.wake_candidates:
-                # Sort by loss descending (hardest first)
-                sorted_candidates = sorted(
-                    self.wake_candidates.items(),
-                    key=lambda x: x[1],
-                    reverse=True
-                )
-
-                # Keep top N%
-                num_keep = int(len(sorted_candidates) * self.replay_ratio)
-                num_keep = max(1, num_keep)  # Keep at least 1
-
-                # Extract just the indices for replay buffer
-                self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_keep]]
-
+                self.update_replay_buffer()
                 if self.contextualize_sleep:
                     self.contextualized_chunks = self.contextualize_buffer()
             else:
@@ -224,3 +204,5 @@ class SleepSampler(Sampler):
             candidate_indices = list(self.wake_candidates.keys())
             num_replay = int(len(candidate_indices) * self.replay_ratio)
             self.replay_buffer = random.sample(candidate_indices, num_replay)
+        if self.contextualize_sleep:
+            self.replay_buffer = self.contextualize_buffer()[0]

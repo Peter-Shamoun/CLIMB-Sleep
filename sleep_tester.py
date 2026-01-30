@@ -184,6 +184,12 @@ def main() -> None:
     print("Replay Buffer avg. loss:", np.mean([sleep_sampler.wake_candidates[i] for i in sleep_sampler.replay_buffer]))
     print()
     
+    print("===Phase Transition===")
+    print("Current phase:", sleep_sampler.phase)
+    sleep_sampler.switch_phase("SLEEP")
+    print("Switched to phase:", sleep_sampler.phase)
+    
+    
     print("===Wake Phase===")
     
 
