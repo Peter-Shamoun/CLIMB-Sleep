@@ -7,6 +7,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+import json
 
 import torch
 import torch.distributed as dist
@@ -190,6 +191,9 @@ class CustomTrainer(Trainer):
 
         self.tokenizer = tokenizer
         self.curriculum_learning_table = curriculum_learning_table
+        
+        # track gradient steps for checkpointing
+        self.global_step = 0
 
         self.add_callback(CurriculumLearningCallback())
         self.add_callback(TaskTrainerCallback(self.objective_curriculum))
@@ -538,6 +542,11 @@ class CustomTrainer(Trainer):
 
             total_loss += unit_loss
 
+        # increment step after each loss computation
+        # compute_loss() runs once per batch during training (right when model does gradient update)
+        # incrementing here ensures we take one step per gradient update
+        self.global_step += 1
+        
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
             and self.state.global_step % self.args.logging_steps == 0
@@ -874,6 +883,12 @@ class CustomTrainer(Trainer):
                 output_dir if output_dir is not None else self.args.output_dir
             )
 
+            # save step count
+            step_file = os.path.join(output_dir, "trainer_state.json")
+            # write current step count to file inside checkpoint folder
+            with open(step_file, 'w') as f:
+                json.dump({'global_step': self.global_step}, f)
+
             mlm_model_dir = os.path.join(output_dir, "lm_model")
             task_heads_dir = os.path.join(output_dir, "task_heads")
             os.makedirs(mlm_model_dir, exist_ok=True)
@@ -892,6 +907,15 @@ class CustomTrainer(Trainer):
 
         task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
         self.objective_curriculum.load(task_head_dir)
+
+        # load step count
+        step_file = os.path.join(resume_from_checkpoint, "trainer_state.json")
+        # reads from JSON file and restores step count
+        if os.path.exists(step_file):
+            with open(step_file, 'r') as f:
+                state = json.load(f)
+                self.global_step = state.get('global_step', 0)
+
 
     def _load_best_model(self):
         super()._load_best_model()
