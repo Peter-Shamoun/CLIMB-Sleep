@@ -122,7 +122,8 @@ class BaseTaskUnit(metaclass=ABCMeta):
         override_input_ids: Optional[Tensor] = None,
         override_lables: Optional[Tensor] = None,
         loss_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Tensor:
+        return_per_sample_loss: bool = False,
+    ) -> Union[Tensor, tuple]:
         """
         Given a batch of data, computes the loss for the given task.
 
@@ -135,6 +136,8 @@ class BaseTaskUnit(metaclass=ABCMeta):
                 to override the labels. Defaults to None.
             * loss_kwargs (Optional[Dict[str, Any]], optional): Additional keyword arguments to be
                 passed to the loss function. Defaults to None.
+            * return_per_sample_loss (bool): If True, returns a tuple of (mean_loss, per_sample_losses).
+                Used for sleep mechanism to track per-sample difficulty. Defaults to False.
         """
 
         input_ids = (
@@ -161,9 +164,16 @@ class BaseTaskUnit(metaclass=ABCMeta):
         )
 
         # compute the loss
-        loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
-
-        return loss
+        if return_per_sample_loss:
+            # Compute per-sample loss for sleep mechanism replay buffer
+            per_sample_loss = cross_entropy(logits, labels, reduction='none', **(loss_kwargs or {}))
+            # Average over sequence dimension to get per-sample loss
+            per_sample_loss = per_sample_loss.mean(dim=-1)
+            mean_loss = per_sample_loss.mean()
+            return mean_loss, per_sample_loss
+        else:
+            loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
+            return loss
 
     def save(self, output_dir: str) -> None:
         """
