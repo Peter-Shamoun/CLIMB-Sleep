@@ -531,10 +531,31 @@ class CustomTrainer(Trainer):
                 """
             )
 
+        # Check if we should track per-sample losses for sleep mechanism
+        track_per_sample = (
+            self.sleep_mechanism_cfg is not None
+            and hasattr(self, 'callback_handler')
+            and hasattr(self.callback_handler, 'train_dataloader')
+            and self.callback_handler.train_dataloader is not None
+            and hasattr(self.callback_handler.train_dataloader, 'sampler')
+            and hasattr(self.callback_handler.train_dataloader.sampler, 'phase')
+            and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
+        )
+
         for unit_name, unit in self.objective_curriculum[
             self.state.global_step
         ].items():
-            unit_loss = unit.compute_loss(model, inputs)
+            if track_per_sample:
+                unit_loss, per_sample_losses = unit.compute_loss(
+                    model, inputs, return_per_sample_loss=True
+                )
+                # Add per-sample losses to the replay buffer
+                if "indices" in inputs:
+                    indices = inputs["indices"].tolist()
+                    losses = per_sample_losses.detach().cpu().tolist()
+                    self.callback_handler.train_dataloader.sampler.add_to_buffer(indices, losses)
+            else:
+                unit_loss = unit.compute_loss(model, inputs)
 
             # averaging over the processes
             total_unit_loss_scalar = self._nested_gather(unit_loss).mean().item()  # type: ignore
@@ -996,6 +1017,10 @@ class CustomTrainer(Trainer):
             logger.info(f"\n[SLEEP PHASE] Consolidating difficult samples ...")
             sampler.switch_phase("SLEEP")
 
+            # Evaluate before sleep phase
+            logger.info(f"Running evaluation before sleep phase {cycle}...")
+            self.evaluate(metric_key_prefix=f"eval_before_sleep_{cycle}")
+
             if len(sampler.replay_buffer) > 0:
                 # train on replay buffer
                 sleep_steps = self.sleep_mechanism_cfg.sleep_max_steps
@@ -1010,5 +1035,9 @@ class CustomTrainer(Trainer):
                 self.args.max_steps = original_max_steps
 
                 logger.info("Completed sleep consolidation.")
+
+            # Evaluate after sleep phase
+            logger.info(f"Running evaluation after sleep phase {cycle}...")
+            self.evaluate(metric_key_prefix=f"eval_after_sleep_{cycle}")
 
             # TODO: Implement Plasticity Decay Mechanism
