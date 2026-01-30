@@ -132,7 +132,7 @@ def main() -> None:
     
     # ===Begin Tests===
     
-    print("dataset:", sleep_sampler.dataset)
+    print("Dataset:", sleep_sampler.dataset)
     print("===Hyperparameters===")
     print("Batch size:",sleep_sampler.batch_size)
     print("Replay ratio:", sleep_sampler.replay_ratio)
@@ -146,7 +146,8 @@ def main() -> None:
     sleep_iter = iter(sleep_sampler)
     batch = next(sleep_iter)
     print("Sampled batch size:", len(batch))
-    print()
+    print(batch[0])
+    print(sleep_sampler.dataset[batch[0]])
     
     
     print(len(sleep_sampler.dataset_indices))
