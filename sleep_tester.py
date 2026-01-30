@@ -132,15 +132,30 @@ def main() -> None:
     
     # ===Begin Tests===
     
-    print(sleep_sampler.dataset)
-    print(sleep_sampler.batch_size)
-    print(sleep_sampler.replay_ratio)
-    print(sleep_sampler.n_phases)
+    print("dataset:", sleep_sampler.dataset)
+    print("===Hyperparameters===")
+    print("Batch size:",sleep_sampler.batch_size)
+    print("Replay ratio:", sleep_sampler.replay_ratio)
+    print("N phases:", sleep_sampler.n_phases)
+    print("N augmentations:", sleep_sampler.n_augmentations)
+    print("Max seq length:", sleep_sampler.max_seq_length)
+    print("Contextualize sleep:", sleep_sampler.contextualize_sleep)
+    print()
+    
+    print("===Sampling===")
+    sleep_iter = iter(sleep_sampler)
+    batch = next(sleep_iter)
+    print("Sampled batch size:", len(batch))
+    print()
+    
     
     print(len(sleep_sampler.dataset_indices))
-    for fold in sleep_sampler.folds:
-        print(len(fold))
+    for i, fold in enumerate(sleep_sampler.folds):
+        print(f"len(fold {i}): {len(fold)}")
     print()
+    
+    print("===Wake Phase===")
+    
 
 if __name__ == "__main__":
     main()
