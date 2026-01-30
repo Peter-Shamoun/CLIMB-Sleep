@@ -1,6 +1,7 @@
 import random
 from typing import Iterator, List, Tuple, Sequence
 
+import torch
 from torch.utils.data import Dataset, Sampler
 
 
@@ -19,6 +20,7 @@ class SleepSampler(Sampler):
         n_augmentations = 40,
         max_seq_length: int = 128,
         contextualize_sleep: bool = True,
+        replay_strategy: str = "loss"
     ) -> None:
         """
         Args:
@@ -30,16 +32,21 @@ class SleepSampler(Sampler):
         """
         self.dataset = dataset
         self.batch_size = batch_size
-        self.replay_ratio = replay_ratio
+        
+        # Sleep hyperparameters
         self.n_phases = n_phases
         self.n_augmentations = n_augmentations
         self.max_seq_length = max_seq_length
         self.contextualize_sleep = contextualize_sleep
-        self.contextualized_chunks: List[List[int]] = [] 
+        self.contextualized_chunks: List[List[int]] = []
 
-        self.phase = "WAKE"
+        # Replay buffer
+        self.replay_ratio = replay_ratio
+        self.replay_strategy: str = replay_strategy # choice of "loss", "random", "loss_weighted"
         self.replay_buffer: List[int] = []  # Stores indices for sleep
         # Stores {index: loss} during wake to determine difficulty
+
+        self.phase = "WAKE"
         self.wake_candidates: dict[int, float] = {}
 
         self.dataset_indices = list(range(len(dataset))) # type: ignore
@@ -175,7 +182,7 @@ class SleepSampler(Sampler):
         for _ in range(self.n_augmentations):
             # shuffle replay buffer differently each time
             shuffled = self.replay_buffer.copy()
-            random.shuffle(shuffled)
+            random.shuffle(shuffled) # TODO: shuffle at the sentence level
             all_orderings.append(shuffled)
 
         # flatten: convert list of orderings into individual indices
@@ -190,13 +197,34 @@ class SleepSampler(Sampler):
         """
         Updates the replay buffer with high-loss samples from the wake phase.
         """
-        # Sort wake candidates by loss
-        sorted_candidates = sorted(
-            self.wake_candidates.items(),
-            key=lambda item: item[1],
-            reverse=True
-        )
-        num_replay = int(len(sorted_candidates) * self.replay_ratio)
-        self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_replay]]
-        # Clear wake candidates for next WAKE phase
-        self.wake_candidates.clear()
+        if self.replay_strategy == "loss":
+            # Sort wake candidates by loss
+            sorted_candidates = sorted(
+                self.wake_candidates.items(),
+                key=lambda item: item[1],
+                reverse=True
+            )
+            num_replay = int(len(sorted_candidates) * self.replay_ratio)
+            self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_replay]]
+            # Clear wake candidates for next WAKE phase
+            self.wake_candidates.clear()
+        elif self.replay_strategy == "loss_weighted":
+            # Sample from wake candidates weighted by loss
+            candidate_indices = list(self.wake_candidates.keys())
+            candidate_losses = torch.tensor(list(self.wake_candidates.values()))
+            num_replay = int(len(candidate_indices) * self.replay_ratio)
+            sampled_indices = torch.multinomial(
+                candidate_losses,
+                num_samples=num_replay,
+                replacement=False
+            ).tolist()
+            self.replay_buffer = [candidate_indices[i] for i in sampled_indices]
+            # Clear wake candidates for next WAKE phase
+            self.wake_candidates.clear()
+        elif self.replay_strategy == "random":
+            # Randomly sample from wake candidates
+            candidate_indices = list(self.wake_candidates.keys())
+            num_replay = int(len(candidate_indices) * self.replay_ratio)
+            self.replay_buffer = random.sample(candidate_indices, num_replay)
+            # Clear wake candidates for next WAKE phase
+            self.wake_candidates.clear()
