@@ -89,7 +89,7 @@ def main() -> None:
     # Loading dataset
     logger.info("Loading dataset")
     dataset: DatasetDict = load_dataset(
-        'cambridge-climb/BabyLM',
+        'cambridge-climb/BabyLM[:1000]',
         'strict_small',
         # use_auth_token=os.environ["HF_READ_TOKEN"],
     )  # type: ignore
