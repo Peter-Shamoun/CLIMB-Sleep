@@ -90,7 +90,7 @@ def main() -> None:
     logger.info("Loading dataset")
     dataset: DatasetDict = load_dataset(
         'cambridge-climb/BabyLM',
-        'strict_small'
+        'strict_small',
         # use_auth_token=os.environ["HF_READ_TOKEN"],
     )  # type: ignore
     
@@ -140,19 +140,25 @@ def main() -> None:
     print("N augmentations:", sleep_sampler.n_augmentations)
     print("Max seq length:", sleep_sampler.max_seq_length)
     print("Contextualize sleep:", sleep_sampler.contextualize_sleep)
+    print("Dataset folds:")
+    for i, fold in enumerate(sleep_sampler.folds):
+        print(f"    len(fold {i}): {len(fold)}")
     print()
     
     print("===Sampling===")
     sleep_iter = iter(sleep_sampler)
     batch = next(sleep_iter)
     print("Sampled batch size:", len(batch))
+    print("First index in batch:")
     print(batch[0])
+    print("First sample in batch:")
     print(sleep_sampler.dataset[batch[0]])
-    
-    
-    print(len(sleep_sampler.dataset_indices))
-    for i, fold in enumerate(sleep_sampler.folds):
-        print(f"len(fold {i}): {len(fold)}")
+    print("Adding to buffer:")
+    losses = np.random.rand(len(batch)).tolist()
+    sleep_sampler.add_to_candidates(batch, losses)
+    print("Indices:", batch)
+    print("Dummy losses:", losses)
+    print("Current wake candidates:", sleep_sampler.wake_candidates)
     print()
     
     print("===Wake Phase===")

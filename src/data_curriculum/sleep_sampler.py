@@ -63,7 +63,7 @@ class SleepSampler(Sampler):
         #   append to batch until batch size is met
         if self.phase == "WAKE":
             for i in self.folds[self.curr_fold]:
-                batch.append(self.dataset[i])
+                batch.append(i)
                 if len(batch) == self.batch_size:
                     yield batch
                     batch = []
@@ -86,15 +86,14 @@ class SleepSampler(Sampler):
                 weights=probabilities,
                 k=len(self.replay_buffer)
             )
-            for idx in sampled_indices:
-                batch.append(self.dataset[idx])
+            for i in sampled_indices:
+                batch.append(i)
                 if len(batch) == self.batch_size:
                     # Contextualize batch before yielding
-                    batch = self.contextualize_batch(batch)
                     yield batch
                     batch = []
 
-    def add_to_buffer(self, indices: List[int], losses: List[float]):
+    def add_to_candidates(self, indices: List[int], losses: List[float]):
         """
         Add indices and losses to the candidate buffer during WAKE phase.
         Args:
@@ -141,7 +140,7 @@ class SleepSampler(Sampler):
                 self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_keep]]
 
                 if self.contextualize_sleep:
-                    self.contextualized_chunks = self.contextualize_sleep()
+                    self.contextualized_chunks = self.contextualize_buffer()
             else:
                 self.replay_buffer = []
 
@@ -160,7 +159,7 @@ class SleepSampler(Sampler):
     def __len__(self):
         return len(self.dataset)
 
-    def contextualize_batch(self) -> List[List[int]]:
+    def contextualize_buffer(self) -> List[List[int]]:
         """
         "Contextualizes" replay buffer before sleep phase to make it more abstract
 
