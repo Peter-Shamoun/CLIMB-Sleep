@@ -107,6 +107,8 @@ class SleepSampler(Sampler):
             indices: List of sample indices.
             losses: List of per-sample loss values.
         """
+        if self.phase != "WAKE": # can only add during WAKE phase
+            return
         for idx, loss in zip(indices, losses):
             # Store or update with max loss seen for this index
             loss_val = float(loss)
@@ -206,8 +208,6 @@ class SleepSampler(Sampler):
             )
             num_replay = int(len(sorted_candidates) * self.replay_ratio)
             self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_replay]]
-            # Clear wake candidates for next WAKE phase
-            self.wake_candidates.clear()
         elif self.replay_strategy == "loss_weighted":
             # Sample from wake candidates weighted by loss
             candidate_indices = list(self.wake_candidates.keys())
@@ -219,12 +219,8 @@ class SleepSampler(Sampler):
                 replacement=False
             ).tolist()
             self.replay_buffer = [candidate_indices[i] for i in sampled_indices]
-            # Clear wake candidates for next WAKE phase
-            self.wake_candidates.clear()
         elif self.replay_strategy == "random":
             # Randomly sample from wake candidates
             candidate_indices = list(self.wake_candidates.keys())
             num_replay = int(len(candidate_indices) * self.replay_ratio)
             self.replay_buffer = random.sample(candidate_indices, num_replay)
-            # Clear wake candidates for next WAKE phase
-            self.wake_candidates.clear()
