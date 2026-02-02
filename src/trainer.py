@@ -456,7 +456,7 @@ class CustomTrainer(Trainer):
 
             # create collate function
             def collate_fn(batch):
-                if train_sampler.phase == "SLEEP" and train_sampler.contextualize_batch:
+                if train_sampler.phase == "SLEEP" and train_sampler.contextualize_batch: #TODO: Shouldnt this be contextualize_sleep?
                     return context_augmented_collate(batch,
                                                      max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
                                                      pad_token_id=self.tokenizer.pad_token_id,
@@ -553,7 +553,7 @@ class CustomTrainer(Trainer):
                 if "indices" in inputs:
                     indices = inputs["indices"].tolist()
                     losses = per_sample_losses.detach().cpu().tolist()
-                    self.callback_handler.train_dataloader.sampler.add_to_buffer(indices, losses)
+                    self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses) #CHANGED from add_to_buffer to add_to_candidates
             else:
                 unit_loss = unit.compute_loss(model, inputs)
 
@@ -988,7 +988,7 @@ class CustomTrainer(Trainer):
 
         if not self.sleep_mechanism_cfg:
             # standard training if not using sleep mechanism
-            return super().super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs)
+            return super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs) #CHANGED from super().super().train to super().train
         
         # sleep-consolidated training
         logger.info("Starting Sleep-Consolidated Training")
