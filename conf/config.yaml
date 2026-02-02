@@ -17,7 +17,7 @@ model:
 
 experiment: 
   seed: 42 
-  group: "temp"
+  group: "sleep-consolidated-learning"
   name: "test"
 
 data_preprocessing:
