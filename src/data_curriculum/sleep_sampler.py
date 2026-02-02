@@ -29,6 +29,9 @@ class SleepSampler(Sampler):
             replay_ratio: Percentage of high-loss samples to keep for replay (e.g. 0.1).
             n_phases: Number of wake-sleep cycles
             n_augmentations: Number of augmentations for shuffling in Replay Buffer
+            max_seq_length: Maximum sequence length for concatenation during sleep
+            contextualize_sleep: Whether to apply contextualization during sleep,
+            replay_strategy: Type of strategy to apply for Replay Buffer
         """
         self.dataset = dataset
         self.batch_size = batch_size
