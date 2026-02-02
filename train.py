@@ -2,6 +2,7 @@
 
 import logging
 import os
+import argparse
 
 # config-related imports
 import hydra
@@ -32,12 +33,6 @@ cs.store(name="base_config", node=BabyLMConfig)
 # A logger for this file
 logger = logging.getLogger(__name__)
 
-DRY_RUN_SUBSAMPLE_FACTOR = 1000 // (10 if torch.cuda.device_count() > 1 else 1)
-DRY_RUN_TRAIN_STEPS = 100
-DRY_RUN_WARMUP_STEPS = 10
-DIFFICULTY_SCORER_UPDATE = 75
-
-
 @record
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: BabyLMConfig):
@@ -49,38 +44,13 @@ def main(cfg: BabyLMConfig):
     if missing_keys:
         raise RuntimeError(f"Missing keys in config: \n {missing_keys}")
 
-    logger.info(f"Config: {OmegaConf.to_yaml(cfg)}")
+    logger.info("Config: %s", OmegaConf.to_yaml(cfg))
 
     if cfg.sleep_mechanism:
-        logger.info(f"Sleep mechanism enabled with {cfg.sleep_mechanism.n_phases} phases")
+        logger.info("Sleep mechanism enabled with %s phases", cfg.sleep_mechanism.n_phases)
 
     # Set seed
     set_seed(cfg.experiment.seed)
-
-    if cfg.experiment.dry_run:
-        logger.info(
-            "Running in dry run mode -- overriding config with values: "
-        )
-        logger.info(f"\t max_training_steps: {DRY_RUN_TRAIN_STEPS}")
-        logger.info(f"\t num_warmup_steps: {DRY_RUN_WARMUP_STEPS}")
-        cfg.trainer.max_training_steps = DRY_RUN_TRAIN_STEPS
-        cfg.trainer.num_warmup_steps = DRY_RUN_WARMUP_STEPS
-
-        if (
-            cfg.data_curriculum is not None
-            and cfg.data_curriculum.difficulty_scorer_kwargs is not None
-        ):
-
-            if (
-                cfg.data_curriculum.difficulty_scorer_kwargs.get("update")
-                is not None
-            ):
-                cfg.data_curriculum.difficulty_scorer_kwargs[
-                    "update"
-                ] = DIFFICULTY_SCORER_UPDATE
-                logger.info(
-                    f"\t data curriculum difficulty scorer update: {DIFFICULTY_SCORER_UPDATE}"
-                )
 
     # Loading dataset
     logger.info("Loading dataset")
@@ -112,14 +82,6 @@ def main(cfg: BabyLMConfig):
         num_proc=64,
         remove_columns=dataset["train"].column_names,
     )
-
-    if cfg.experiment.dry_run:
-        logger.info(
-            f"Running in dry run mode -- subsampling dataset by {DRY_RUN_SUBSAMPLE_FACTOR}x"
-        )
-        train_dataset = train_dataset.select(
-            range(0, train_dataset.num_rows, DRY_RUN_SUBSAMPLE_FACTOR)
-        )
 
     eval_dataset = dataset["validation"].map(
         data_preprocessor,
@@ -159,49 +121,6 @@ def main(cfg: BabyLMConfig):
                 id=cfg.experiment.resume_run_id,
                 resume="allow",
             )
-
-            # Curriculum learning table: Stores useful information about the curriculum learning
-            # process (like the data that is being sampled, what objectives are being used, etc.)
-            if cfg.experiment.resume_run_id:
-                try:
-                    curriculum_learning_table = wandb.run.use_artifact(
-                        f"baby-lm/{cfg.experiment.group}/run-{cfg.experiment.resume_run_id}-traincurriculum_learning_table:latest",
-                    ).get("train/curriculum_learning_table")
-                except WandbCommError:
-                    logger.warning(
-                        "Could not find curriculum learning table artifact for run, creating new table"
-                    )
-                    curriculum_learning_table = wandb.Table(
-                        columns=[
-                            "global_step",
-                            "data_difficulty_percentile",
-                            "data_sampled_percentile",
-                            "num_samples",
-                            "max_difficulty_score",
-                            "min_difficulty_score",
-                            "median_difficulty_score",
-                            "data_samples",
-                            "active_curricula_units",
-                            "vocabulary_unmasked_percentile",
-                            "vocabulary_masked_samples",
-                        ]
-                    )
-            else:
-                curriculum_learning_table = wandb.Table(
-                    columns=[
-                        "global_step",
-                        "data_difficulty_percentile",
-                        "data_sampled_percentile",
-                        "num_samples",
-                        "max_difficulty_score",
-                        "min_difficulty_score",
-                        "median_difficulty_score",
-                        "data_samples",
-                        "active_curricula_units",
-                        "vocabulary_unmasked_percentile",
-                        "vocabulary_masked_samples",
-                    ]
-                )
         else:
             curriculum_learning_table = None
 
@@ -239,13 +158,9 @@ def main(cfg: BabyLMConfig):
         else None,  # wandb deactivated for offline runs
         save_strategy="steps",
         hub_strategy="every_save",
-        push_to_hub=not cfg.experiment.offline_run,
-        hub_model_id=f"cambridge-climb/{cfg.experiment.group}-{cfg.model.name}-model"
-        if not cfg.experiment.offline_run
-        else None,
-        hub_token=os.environ["HF_WRITE_TOKEN"]
-        if not cfg.experiment.offline_run
-        else None,
+        push_to_hub=False,
+        hub_model_id=None,
+        hub_token=os.environ["HF_WRITE_TOKEN"],
         dataloader_drop_last=(cfg.data_curriculum is not None or cfg.sleep_mechanism is not None),
         remove_unused_columns=False,
         load_best_model_at_end=True,
@@ -264,7 +179,7 @@ def main(cfg: BabyLMConfig):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
-        curriculum_learning_table=curriculum_learning_table,
+        curriculum_learning_table=None,
     )
 
     if not cfg.experiment.resume_checkpoint_path:
@@ -289,4 +204,11 @@ def main(cfg: BabyLMConfig):
 
 
 if __name__ == "__main__":
+    # parser = argparse.ArgumentParser(description='Generate text using language models via LM Studio API')
+    # parser.add_argument('--config_path', type=str, required=True,
+    #                     help='Path to the Hydra config file')
+    # args = parser.parse_args()
+    # # Load the config file using Hydra
+    # cfg = hydra.compose(config_name=args.config_path)
+    # main(cfg)
     main()

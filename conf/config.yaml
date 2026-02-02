@@ -17,6 +17,7 @@ model:
 
 experiment: 
   seed: 42 
+  group: "temp"
 
 data_preprocessing:
   include_punctuation: True
