@@ -163,7 +163,8 @@ def main() -> None:
     
     print("===Adding to Replay Buffer===")
     print()
-    print("loss replay strategy")
+    print("Loss replay strategy")
+    sleep_sampler.replay_strategy = "loss"
     sleep_sampler.update_replay_buffer()
     print("Replay buffer size:", len(sleep_sampler.replay_buffer))
     print("Replay buffer contents:", sleep_sampler.replay_buffer[:10])  # Show first 10 elements

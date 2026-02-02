@@ -318,8 +318,6 @@ class CustomTrainer(Trainer):
         if self.sleep_mechanism_cfg:
             # Sleep-consolidated learning: use SleepSampler for wake/sleep cycles
             logger.info("Using SleepSampler for sleep-consolidated learning")
-            
-            from src.data_curriculum.sleep_sampler import SleepSampler
 
             return SleepSampler(
                 dataset=self.train_dataset,
