@@ -456,7 +456,7 @@ class CustomTrainer(Trainer):
 
             # create collate function
             def collate_fn(batch):
-                if train_sampler.phase == "SLEEP" and train_sampler.contextualize_batch: #TODO: Shouldnt this be contextualize_sleep?
+                if train_sampler.phase == "SLEEP" and train_sampler.contextualize_sleep:
                     return context_augmented_collate(batch,
                                                      max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
                                                      pad_token_id=self.tokenizer.pad_token_id,
