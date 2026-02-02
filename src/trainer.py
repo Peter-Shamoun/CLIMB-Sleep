@@ -1024,7 +1024,7 @@ class CustomTrainer(Trainer):
             if len(sampler.replay_buffer) > 0:
                 # train on replay buffer
                 sleep_steps = self.sleep_mechanism_cfg.sleep_max_steps
-
+                
                 # modify max_steps for sleep phase
                 original_max_steps = self.args.max_steps
                 self.args.max_steps = self.state.global_step + sleep_steps
