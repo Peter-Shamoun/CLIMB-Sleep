@@ -6,8 +6,8 @@ wake_block_steps: 10000
 sleep_max_steps: 1000
 sleep_loss_threshold: 0.5
 replay_ratio: 0.1
-plasticity_decay_type: lr_decay
-plasticity_decay_rate: 0.9
+# plasticity_decay_type: lr_decay
+# plasticity_decay_rate: 0.9
 n_augmentations: 40
 n_phases: 5
 max_seq_length: 128
