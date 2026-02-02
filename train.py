@@ -51,6 +51,9 @@ def main(cfg: BabyLMConfig):
 
     logger.info(f"Config: {OmegaConf.to_yaml(cfg)}")
 
+    if cfg.sleep_mechanism:
+        logger.info(f"Sleep mechanism enabled with {cfg.sleep_mechanism.n_phases} phases")
+
     # Set seed
     set_seed(cfg.experiment.seed)
 
@@ -243,8 +246,7 @@ def main(cfg: BabyLMConfig):
         hub_token=os.environ["HF_WRITE_TOKEN"]
         if not cfg.experiment.offline_run
         else None,
-        dataloader_drop_last=cfg.data_curriculum
-        is not None,  # NOTE: This is to ensure that the curriculum is not broken on the last batch
+        dataloader_drop_last=(cfg.data_curriculum is not None or cfg.sleep_mechanism is not None),
         remove_unused_columns=False,
         load_best_model_at_end=True,
         metric_for_best_model="eval_perplexity_mean",
