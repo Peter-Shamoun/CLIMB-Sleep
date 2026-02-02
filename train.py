@@ -114,7 +114,7 @@ def main(cfg: BabyLMConfig):
         # Check if we're on process 0
         if int(os.environ.get("RANK", "0")) == 0:
             wandb.init(
-                entity="baby-lm",
+                entity="lemn-lab",
                 project=cfg.experiment.group,
                 name=cfg.experiment.name,
                 config=wandb.config,  # type: ignore
