@@ -38,7 +38,7 @@ class SleepSampler(Sampler):
         self.n_augmentations = n_augmentations
         self.max_seq_length = max_seq_length
         self.contextualize_sleep = contextualize_sleep
-        self.contextualized_chunks: List[List[int]] = []
+        self.contextualized_chunks: List[int] = []
 
         # Replay buffer
         self.replay_ratio = replay_ratio
@@ -84,14 +84,19 @@ class SleepSampler(Sampler):
                 self.wake_pointer = 0
                 return self.__iter__()
             
-            # shuffle and yield from contextualized replay buffer
-            random.shuffle(self.replay_buffer)
-            for i in self.replay_buffer:
+            # use contextualized chunks if available, otherwise use replay buffer
+            indices_to_sample = (
+                self.contextualized_chunks 
+                if self.contextualize_sleep and self.contextualized_chunks 
+                else self.replay_buffer
+            )
+
+            for i in indices_to_sample:
                 batch.append(i)
                 if len(batch) == self.batch_size:
-                    # Contextualize batch before yielding
                     yield batch
                     batch = []
+            
 
     def add_to_candidates(self, indices: List[int], losses: List[float]):
         """
@@ -148,7 +153,7 @@ class SleepSampler(Sampler):
     def __len__(self):
         return len(self.dataset)
 
-    def contextualize_buffer(self) -> List[List[int]]:
+    def contextualize_buffer(self) -> List[int]:
         """
         "Contextualizes" replay buffer before sleep phase to make it more abstract
 
@@ -173,7 +178,7 @@ class SleepSampler(Sampler):
         for ordering in all_orderings:
             flattened.extend(ordering)
         
-        return [flattened]
+        return flattened
     
     def update_replay_buffer(self):
         """
