@@ -213,4 +213,4 @@ class SleepSampler(Sampler):
             num_replay = int(len(candidate_indices) * self.replay_ratio)
             self.replay_buffer = random.sample(candidate_indices, num_replay)
         if self.contextualize_sleep:
-            self.replay_buffer = self.contextualize_buffer()[0]
+            self.replay_buffer = self.contextualize_buffer()
