@@ -169,7 +169,7 @@ class SleepSampler(Sampler):
         for _ in range(self.n_augmentations):
             # shuffle replay buffer differently each time
             shuffled = self.replay_buffer.copy()
-            random.shuffle(shuffled) # TODO: shuffle at the sentence level
+            random.shuffle(shuffled)
             all_orderings.append(shuffled)
 
         # flatten: convert list of orderings into individual indices
