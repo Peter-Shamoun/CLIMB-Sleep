@@ -132,7 +132,7 @@ def main(cfg: BabyLMConfig):
 
     training_args = TrainingArguments(
         output_dir=f"checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
-        overwrite_output_dir=False,
+        # overwrite_output_dir=False,
         do_train=True,
         do_eval=True,
         do_predict=False,
