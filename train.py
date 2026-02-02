@@ -57,7 +57,7 @@ def main(cfg: BabyLMConfig):
     dataset: DatasetDict = load_dataset(
         cfg.dataset.name,
         cfg.dataset.subconfig,
-        use_auth_token=os.environ["HF_READ_TOKEN"],
+        # use_auth_token=os.environ["HF_READ_TOKEN"],
     )  # type: ignore
 
     assert isinstance(dataset, DatasetDict), "Dataset is not a DatasetDict"
