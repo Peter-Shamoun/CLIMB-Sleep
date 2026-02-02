@@ -175,9 +175,9 @@ class SleepMechanismParams(DictConfig):
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
     # Plasticity decay type
-    plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
+    # plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
     # Factor by which to decay plasticity
-    plasticity_decay_rate: float = 0.9
+    # plasticity_decay_rate: float = 0.9
     # Number of context augmentations applied per batch
     n_augmentations: int = 40
     # Number of wake-sleep cycles

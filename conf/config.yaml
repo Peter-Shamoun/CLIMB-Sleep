@@ -6,7 +6,7 @@ defaults:
   - model: roberta_pln_small
   - tokenizer: cbt_8192
   # Uncomment the following line to enable sleep mechanism:
-  # - sleep_mechanism: default
+  - sleep_mechanism: default
 
 dataset: 
   name: 'cambridge-climb/BabyLM'
