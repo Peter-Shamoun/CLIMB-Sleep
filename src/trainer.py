@@ -551,7 +551,7 @@ class CustomTrainer(Trainer):
                 if "indices" in inputs:
                     indices = inputs["indices"].tolist()
                     losses = per_sample_losses.detach().cpu().tolist()
-                    self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses) #CHANGED from add_to_buffer to add_to_candidates
+                    self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
             else:
                 unit_loss = unit.compute_loss(model, inputs)
 
@@ -574,114 +574,6 @@ class CustomTrainer(Trainer):
             self.log(loss_metrics)
 
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
-
-            if self.curriculum_learning_table is not None:
-
-                if len(self.curriculum_learning_table.data) > 0:
-                    # NOTE: this might be bug prone (rdm)
-                    max_table_step = int(
-                        self.curriculum_learning_table.data[-1][0]
-                    )
-
-                    if max_table_step >= self.state.global_step:
-                        # The table has already been logged for this step; just skip logging table
-                        return total_loss
-
-                ## Data Curriculum Learning Related ##
-
-                # decode the first 5 inputs
-                data_samples = ""
-                for i in range(5):
-                    data_samples += (
-                        f"{i+1}: "
-                        + self.tokenizer.decode(inputs["input_ids"][i])
-                        + "\n\n"
-                    )
-
-                if self.data_curriculum_cfg:
-                    data_difficulty_percentile = self.callback_handler.train_dataloader.sampler.pacing_fn(  # type: ignore
-                        self.state.global_step
-                    )
-                    difficulty_scores = torch.tensor(self.callback_handler.train_dataloader.sampler.difficulty_scorer.filtered_difficulty_scores)  # type: ignore
-                    difficulty_scores = difficulty_scores[
-                        difficulty_scores != 0
-                    ]  # Don't include the filtered-out scores
-                    num_samples = (
-                        difficulty_scores.shape[0] * self.args.world_size
-                    )
-                    data_sampled_percentile = num_samples / self.train_dataset.num_rows  # type: ignore
-                    max_difficulty_score = difficulty_scores.max().item()
-                    min_difficulty_score = difficulty_scores.min().item()
-                    median_difficulty_score = difficulty_scores.median().item()
-
-                else:
-                    data_difficulty_percentile = 1.0
-                    data_sampled_percentile = 1.0
-                    num_samples = len(self.callback_handler.train_dataloader.sampler) * self.args.world_size  # type: ignore
-                    max_difficulty_score = 0.0
-                    min_difficulty_score = 0.0
-                    median_difficulty_score = 0.0
-
-                ## Objective Curriculum Learning Related ##
-
-                active_curricula_units = ", ".join(
-                    list(
-                        self.objective_curriculum[
-                            self.state.global_step
-                        ].keys()
-                    )
-                )
-
-                ## Vocabulary Curriculum Learning Related ##
-
-                if self.vocabulary_curriculum_cfg:
-                    vocab_unmasked_percentile = self.callback_handler.train_dataloader.vocabulary_map.pacing_fn(  # type: ignore
-                        self.state.global_step
-                    )
-
-                    vocab_masked_samples = ""
-                    for i in range(5):
-                        vocab_masked_samples += (
-                            f"{i+1}: "
-                            + self.tokenizer.decode(
-                                inputs["masked_input_ids"][i]
-                            )
-                            + "\n\n"
-                        )
-                else:
-                    vocab_unmasked_percentile = 1.0
-                    vocab_masked_samples = data_samples
-
-                self.curriculum_learning_table.add_data(
-                    self.state.global_step,
-                    data_difficulty_percentile,
-                    data_sampled_percentile,
-                    num_samples,
-                    max_difficulty_score,
-                    min_difficulty_score,
-                    median_difficulty_score,
-                    data_samples,
-                    active_curricula_units,
-                    vocab_unmasked_percentile,
-                    vocab_masked_samples,
-                )
-                # if divisible by evaluation interval, log the table
-                if (
-                    self.args.evaluation_strategy == IntervalStrategy.STEPS
-                    and self.state.global_step
-                    % self.args.eval_steps  # type: ignore
-                    == 0
-                ):
-                    _curriculum_learning_table = Table(
-                        columns=self.curriculum_learning_table.columns,
-                        data=self.curriculum_learning_table.data,
-                    )
-
-                    self.log(
-                        {
-                            "curriculum_learning_table": _curriculum_learning_table,  # type: ignore
-                        }
-                    )
 
         return total_loss
 
