@@ -656,6 +656,7 @@ class CustomTrainer(Trainer):
             )
             perplexity_mean = torch.mean(tensor_perplexities)
             perplexity_std = torch.std(tensor_perplexities)
+            perplexity_max = torch.max(tensor_perplexities)
 
             if self.args.world_size > 1:
                 # setup barrier for all processes
@@ -670,15 +671,23 @@ class CustomTrainer(Trainer):
                     torch.zeros_like(perplexity_std)
                     for _ in range(self.args.world_size)
                 ]
+                gathered_perplexity_max = [
+                    torch.zeros_like(perplexity_max)
+                    for _ in range(self.args.world_size)
+                ]
 
                 dist.all_gather(gathered_perplexity_mean, perplexity_mean)
                 dist.all_gather(gathered_perplexity_std, perplexity_std)
+                dist.all_gather(gathered_perplexity_max, perplexity_max)
 
             # if main process
             metrics[f"{metric_key_prefix}_perplexity_mean"] = torch.mean(
                 torch.tensor(perplexities)
             ).item()
             metrics[f"{metric_key_prefix}_perplexity_std"] = torch.std(
+                torch.tensor(perplexities)
+            ).item()
+            metrics[f"{metric_key_prefix}_perplexity_max"] = torch.max(
                 torch.tensor(perplexities)
             ).item()
 

@@ -92,6 +92,7 @@ def main() -> None:
         'cambridge-climb/BabyLM',
         'strict_small',
         # use_auth_token=os.environ["HF_READ_TOKEN"],
+        trust_remote_code=True,
     )  # type: ignore
     
     assert isinstance(dataset, DatasetDict), "Dataset is not a DatasetDict"
