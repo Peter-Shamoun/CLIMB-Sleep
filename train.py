@@ -142,7 +142,7 @@ def main(cfg: BabyLMConfig):
         max_steps=cfg.trainer.max_training_steps,
         warmup_steps=cfg.trainer.num_warmup_steps,
         seed=cfg.experiment.seed,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=cfg.trainer.max_training_steps
         // (2 if cfg.experiment.dry_run else 8),  # eval every 25% of training
         save_steps=cfg.trainer.max_training_steps
