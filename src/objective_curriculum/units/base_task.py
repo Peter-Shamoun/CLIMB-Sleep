@@ -161,7 +161,8 @@ class BaseTaskUnit(metaclass=ABCMeta):
         labels = (
             override_lables
             if override_lables is not None
-            else inputs[f"labels_{self.task_unit_name}"]
+            else inputs[f"labels_{self.task_unit_name}"] if f"labels_{self.task_unit_name}" in inputs
+            else inputs["labels"]
         )
 
         # compute the loss
