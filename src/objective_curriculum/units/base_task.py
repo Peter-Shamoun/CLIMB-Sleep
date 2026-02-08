@@ -143,7 +143,8 @@ class BaseTaskUnit(metaclass=ABCMeta):
         input_ids = (
             override_input_ids
             if override_input_ids is not None
-            else inputs[f"input_ids_{self.task_unit_name}"]
+            else inputs[f"input_ids_{self.task_unit_name}"] if f"input_ids_{self.task_unit_name}" in inputs
+            else inputs["input_ids"]
         )
 
         base_model_outputs = model(
