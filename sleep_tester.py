@@ -157,7 +157,7 @@ def main() -> None:
     print("=Batch=")
     batch = []
     for i in range(sleep_sampler.batch_size):
-        batch.append(sleep_iter.next())
+        batch.append(next(sleep_iter))
     print("Sampled batch size:", len(batch))
     print("First index in batch:", batch[0])
     print("First sample in batch:", sleep_sampler.dataset[batch[0]])
