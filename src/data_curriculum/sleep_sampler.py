@@ -2,10 +2,10 @@ import random
 from typing import Iterator, List, Tuple, Sequence
 
 import torch
-from torch.utils.data import Dataset, BatchSampler
+from torch.utils.data import Dataset, Sampler
 
 
-class SleepSampler(BatchSampler):
+class SleepSampler(Sampler):
     """
     Sampler that manages data stream for Sleep-Consolidated Learning.
     Switches between WAKE (new data) and SLEEP (replay high-loss data) phases.
@@ -66,17 +66,12 @@ class SleepSampler(BatchSampler):
         self.wake_pointer = 0
         
     def __iter__(self):
-        # implement logic of sampling here
-        batch = []
         # If wake phase:
         #   Shuffle data in fold randomly
         #   append to batch until batch size is met
         if self.phase == "WAKE":
             for i in self.folds[self.curr_fold]:
-                batch.append(i)
-                if len(batch) == self.batch_size:
-                    yield batch
-                    batch = []
+                yield i
         # If sleep phase:
         #   Sample from replay buffer based on loss (higher loss = higher prob) 
         elif self.phase == "SLEEP":
@@ -95,10 +90,7 @@ class SleepSampler(BatchSampler):
             )
 
             for i in indices_to_sample:
-                batch.append(i)
-                if len(batch) == self.batch_size:
-                    yield batch
-                    batch = []
+                yield i
             
 
     def add_to_candidates(self, indices: List[int], losses: List[float]):
