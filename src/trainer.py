@@ -397,7 +397,7 @@ class CustomTrainer(Trainer):
         )
         return ignore_columns
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time=None) -> None:
         """
         Log `logs` on the various objects watching training.
 
