@@ -2,10 +2,10 @@ import random
 from typing import Iterator, List, Tuple, Sequence
 
 import torch
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset, BatchSampler
 
 
-class SleepSampler(Sampler):
+class SleepSampler(BatchSampler):
     """
     Sampler that manages data stream for Sleep-Consolidated Learning.
     Switches between WAKE (new data) and SLEEP (replay high-loss data) phases.
