@@ -141,6 +141,8 @@ def main(cfg: BabyLMConfig):
                                     )
                                 )
                                 // cfg.trainer.batch_size)
+        logger.info("Theretical max steps: %d", theoretical_max_steps)
+        logger.info("Empirical max steps: %d", empirical_max_steps)
         max_training_steps = min(theoretical_max_steps, empirical_max_steps)
     else:
         max_training_steps = cfg.trainer.max_training_steps
