@@ -106,7 +106,7 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         # curriculum.
 
         # store the index for sleep mechanism tracking
-        current_index = index
+        # current_index = index
 
         active_objective_units = self.loader.objective_curriculum[
             self.loader.global_stepnum
@@ -153,10 +153,10 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         )  # may raise StopIteration
 
         # add indices to data for sleep mechanism tracking
-        if isinstance(current_index, list):
-            data["indices"] = torch.tensor(current_index)
-        else:
-            data["indices"] = torch.tensor([current_index])
+        # if isinstance(current_index, list):
+        #     data["indices"] = torch.tensor(current_index)
+        # else:
+        #     data["indices"] = torch.tensor([current_index])
             
         if self._pin_memory:
             data = _torch_pin_memory(data, self._pin_memory_device)  # type: ignore[arg-type]
