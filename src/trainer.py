@@ -581,7 +581,27 @@ class CustomTrainer(Trainer):
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
         return total_loss
     def training_step(self, model, inputs):
-        loss = super().training_step(model, inputs)
+        model.train()
+        inputs = self._prepare_inputs(inputs)
+
+        if self.args.use_amp:
+            with torch.cuda.amp.autocast():
+                loss = self.compute_loss(model, inputs)
+        else:
+            loss = self.compute_loss(model, inputs)
+
+        if self.args.n_gpu > 1:
+            loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+        if self.args.gradient_accumulation_steps > 1 and not self.is_tpu_training:
+            loss = loss / self.args.gradient_accumulation_steps
+
+        # Backward pass and optimization logic... (standard Trainer code)
+        if self.args.use_amp:
+            self.scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
         # == SLEEP MECHANISM == #
         if self.sleep_mechanism_cfg:
             # if wake phase over, reset phase steps, eval, then switch
@@ -603,7 +623,8 @@ class CustomTrainer(Trainer):
                 logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
                 logger.info("Rebulding train dataloader...")
                 self._train_dataloader = None
-        return loss
+        
+        return loss.detach()
 
     def evaluate(
         self,
