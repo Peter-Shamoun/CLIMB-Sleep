@@ -77,6 +77,8 @@ class TrainerParams(DictConfig):
     eval_glue: bool
     eval_msgs: bool
     eval_perplexity: bool
+    n_eval_samples: int
+    eval_batch_size: int
 
 
 ### Curriculum learning parameter: can be either objective or data-driven ###

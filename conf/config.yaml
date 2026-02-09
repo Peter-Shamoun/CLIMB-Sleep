@@ -34,3 +34,5 @@ trainer:
   eval_glue: False
   eval_msgs: False
   eval_perplexity: True
+  n_eval_samples: 100
+  eval_batch_size: 4

@@ -657,7 +657,7 @@ class CustomTrainer(Trainer):
             range(
                 self.args.process_index,  # local process rank
                 self.eval_dataset.num_rows,  # type: ignore
-                self.eval_dataset.num_rows // ((100 if self.dry_run else 10_000) // self.args.world_size),  # type: ignore
+                self.eval_dataset.num_rows // ((100 if self.dry_run else self.hydra_config.trainer.n_eval_samples) // self.args.world_size),  # type: ignore
             )
         )
         logging.info("Evaluating perplexity...")
@@ -677,7 +677,7 @@ class CustomTrainer(Trainer):
 
                 inference_dataloader = DataLoader(
                     eval_subset,  # type: ignore
-                    batch_size=4,
+                    batch_size=self.hydra_config.trainer.eval_batch_size,
                     shuffle=False,
                     collate_fn=base_collate_fn,
                     pin_memory=True,
