@@ -68,7 +68,7 @@ class SleepSampler(Sampler):
         
         # Save max feasible steps for wake phase in case user-defined max exceeds
         # data in folds
-        self.wake_max_steps = self._get_wake_max_steps()
+        self.wake_max_steps = self.get_wake_max_steps()
         
         # print(f"MAX STEPS: {len(self.dataset) // self.batch_size}")
         
