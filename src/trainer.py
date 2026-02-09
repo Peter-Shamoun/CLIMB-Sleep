@@ -552,7 +552,7 @@ class CustomTrainer(Trainer):
                 unit_loss, per_sample_losses = unit.compute_loss(
                     model, inputs, return_per_sample_loss=True
                 )
-                logger.info(f"inputs: {inputs}")
+                # logger.info(f"inputs: {inputs}")
                 # Add per-sample losses to the replay buffer
                 if "indices" in inputs:
                     indices = inputs["indices"].tolist()
