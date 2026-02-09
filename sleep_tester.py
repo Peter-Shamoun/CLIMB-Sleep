@@ -25,6 +25,9 @@ from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
 from src.data_curriculum.sleep_sampler import SleepSampler
 
+cs = ConfigStore.instance()
+cs.store(name="base_config", node=BabyLMConfig)
+
 # A logger for this file
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,8 @@ def main(cfg: BabyLMConfig) -> None:
     assert (
         "HF_READ_TOKEN" in os.environ and "HF_WRITE_TOKEN" in os.environ
     ), "HF_READ_TOKEN and HF_WRITE_TOKEN need to be set as environment variables"
+    
+    logger.info("Config: %s", OmegaConf.to_yaml(cfg))
     
     # Loading dataset
     logger.info("Loading dataset")
