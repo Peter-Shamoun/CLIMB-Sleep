@@ -23,12 +23,12 @@ def load_tokenizer(cfg: BabyLMConfig) -> PreTrainedTokenizerFast:
     remove_keys = ["name"]
     tokenizer_kwargs = {
         str(key): val
-        for key, val in cfg['tokenizer'].items()
+        for key, val in cfg.tokenizer.items()
         if key not in remove_keys and val is not None
     }
 
     tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
-        cfg['tokenizer']['name'],
+        cfg.tokenizer.name,
         use_auth_token=os.environ["HF_READ_TOKEN"],
         **tokenizer_kwargs,
     )  # type: ignore

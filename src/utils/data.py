@@ -72,11 +72,11 @@ class DatasetPreprocessor(object):
         """
 
         # data processing params
-        self.include_punctuation = cfg['data_preprocessing']['include_punctuation']
-        self.max_input_length = cfg['data_preprocessing']['max_input_length']
-        self.join_sentences = cfg['data_preprocessing']['join_sentences']
-        self.callback_functions = cfg['data_preprocessing']['callback_functions']
-        self.dataset_subconfig = cfg['dataset']['subconfig']
+        self.include_punctuation = cfg.data_preprocessing.include_punctuation
+        self.max_input_length = cfg.data_preprocessing.max_input_length
+        self.join_sentences = cfg.data_preprocessing.join_sentences
+        self.callback_functions = cfg.data_preprocessing.callback_functions
+        self.dataset_subconfig = cfg.dataset.subconfig
         self.tokenizer = tokenizer
 
     ### --- Callback functions --- ###
