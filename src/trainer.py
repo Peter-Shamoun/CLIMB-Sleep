@@ -579,7 +579,29 @@ class CustomTrainer(Trainer):
             self.log(loss_metrics)
 
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
-
+        # == SLEEP MECHANISM == #
+        # if wake phase over, reset phase steps, eval, then switch
+        sampler = self.callback_handler.train_dataloader.sampler
+        if sampler.phase == "WAKE" and self.phase_steps >= sleep_cfg.wake_block_steps:
+            logger.info("Ending WAKE phase...")
+            self.phase_steps = 0
+            # eval before sleep
+            logger.info("Running evaluation before sleep phase...")
+            self.evaluate(metric_key_prefix="eval_before_sleep")
+            logger.info("Switching to SLEEP phase...")
+            sampler.switch_phase("SLEEP")
+        elif sampler.phase == "SLEEP" and self.phase_steps >= sleep_cfg.sleep_max_steps:
+            logger.info("Ending SLEEP phase...")
+            self.phase_steps = 0
+            # eval before sleep
+            logger.info("Running evaluation after sleep phase...")
+            self.evaluate(metric_key_prefix="eval_after_sleep")
+            logger.info("Switching to WAKE phase...")
+            sampler.switch_phase("WAKE")
+        logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
+        logger.info("Rebulding train dataloader...")
+        self._train_dataloader = None
+        
         return total_loss
 
     def evaluate(
