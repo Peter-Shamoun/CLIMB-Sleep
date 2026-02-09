@@ -14,6 +14,9 @@ class ExperimentParams(DictConfig):
     # Name of the experiment - needs to be set at runtime
     name: str = MISSING
 
+    # Name of wandb entity experiment belongs to
+    entity: str = MISSING
+    
     # Name of the group that the current experiment belongs to
     # analogous to 'project' in wandb
     group: str = MISSING

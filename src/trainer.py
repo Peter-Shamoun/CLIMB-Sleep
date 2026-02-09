@@ -611,7 +611,7 @@ class CustomTrainer(Trainer):
                     logger.info(f"Replay Buffer Size: {len(sampler.replay_buffer)}")
                     
                 logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
-                logger.info("Rebulding train dataloader...")
+                logger.info("Rebuilding train dataloader...")
                 self._train_dataloader = None
         
         return loss

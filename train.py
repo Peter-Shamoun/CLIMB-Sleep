@@ -99,7 +99,7 @@ def main(cfg: BabyLMConfig):
     else:
         # These environment variables get picked up by Trainer
         os.environ["WANDB_PROJECT"] = cfg.experiment.group
-        os.environ["WANDB_ENTITY"] = "lemn-lab"
+        os.environ["WANDB_ENTITY"] = cfg.experiment.entity
         wandb.config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
         )
@@ -115,7 +115,7 @@ def main(cfg: BabyLMConfig):
         # Check if we're on process 0
         if int(os.environ.get("RANK", "0")) == 0:
             wandb.init(
-                entity="lemn-lab",
+                entity=cfg.experiment.entity,
                 project=cfg.experiment.group,
                 name=cfg.experiment.name,
                 config=wandb.config,  # type: ignore
@@ -191,13 +191,10 @@ def main(cfg: BabyLMConfig):
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
-    # Always evaluate the best model at the end of training, on every metric.
-    # Note that passing load_best_model_at_end=True to the trainer will load the best model at
-    # the end of training, so we don't need to do it here
-    trainer.eval_glue = True
-    trainer.eval_msgs = True
-    trainer.eval_blimp = True
-    trainer.eval_perplexity = True
+    # trainer.eval_glue = True
+    # trainer.eval_msgs = True
+    # trainer.eval_blimp = True
+    # trainer.eval_perplexity = True
     trainer.evaluate(
         metric_key_prefix="eval_best"
     )  # Note that this will also save the best model in the main output directory

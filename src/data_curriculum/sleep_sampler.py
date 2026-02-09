@@ -65,6 +65,8 @@ class SleepSampler(Sampler):
         
         self.wake_pointer = 0
         
+        print(f"MAX STEPS: {len(self.dataset) // self.batch_size}")
+        
     def __iter__(self):
         # If wake phase:
         #   Shuffle data in fold randomly

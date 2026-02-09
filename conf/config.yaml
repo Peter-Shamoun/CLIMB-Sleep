@@ -17,6 +17,7 @@ model:
 
 experiment: 
   seed: 42 
+  entity: "lemn-lab"
   group: "sleep-consolidated-learning"
   name: "test"
 
