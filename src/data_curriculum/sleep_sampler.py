@@ -105,8 +105,8 @@ class SleepSampler(Sampler):
             # Store or update with max loss seen for this index
             loss_val = float(loss)
             if idx in self.wake_candidates:
-                # Keep the higher loss if we've seen this sample before
-                self.wake_candidates[idx] = max(self.wake_candidates[idx], loss_val)
+                # Keep the lower loss if we've seen this sample before
+                self.wake_candidates[idx] = min(self.wake_candidates[idx], loss_val)
             else:
                 self.wake_candidates[idx] = loss_val
 
