@@ -22,7 +22,7 @@ from src.config import BabyLMConfig
 from src.evaluator import collect_results
 from src.models import load_base_model
 from src.tokenizer import load_tokenizer
-from src.trainer import CustomTrainer
+from src.trainer import CustomTrainer, SleepCallback
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
 
@@ -181,6 +181,7 @@ def main(cfg: BabyLMConfig):
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         curriculum_learning_table=None,
+        callbacks=SleepCallback(cfg.sleep_mechanism.n_phases)
     )
 
     if not cfg.experiment.resume_checkpoint_path:

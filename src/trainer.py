@@ -158,6 +158,7 @@ class CustomTrainer(Trainer):
         self.data_curriculum_cfg = hydra_config.data_curriculum
         self.vocabulary_curriculum_cfg = hydra_config.vocabulary_curriculum
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
+        self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
         # We check that this variable is set in the config file when loading the base model
@@ -315,67 +316,70 @@ class CustomTrainer(Trainer):
             else self.args.seed
         )
 
-        if self.sleep_mechanism_cfg:
-            # Sleep-consolidated learning: use SleepSampler for wake/sleep cycles
-            logger.info("Using SleepSampler for sleep-consolidated learning")
+        # Save sampler in an attribute
+        if not hasattr(self, "_train_sampler"):
+            if self.sleep_mechanism_cfg:
+                # Sleep-consolidated learning: use SleepSampler for wake/sleep cycles
+                logger.info("Using SleepSampler for sleep-consolidated learning")
 
-            return SleepSampler(
-                dataset=self.train_dataset,
-                batch_size=self.args.per_device_train_batch_size,
-                replay_ratio=self.sleep_mechanism_cfg.replay_ratio,
-                n_phases=self.sleep_mechanism_cfg.n_phases,
-                max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
-                contextualize_sleep=True,
-                n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
-            )
-        elif self.data_curriculum_cfg:
-            # A data-driven curriculum assumes we are using a difficulty scorer along with a
-            # curriculum pacing function to determine the order in which we sample data.
-
-            pacing_fn = get_pacing_fn(
-                self.data_curriculum_cfg.pacing_fn_name,
-                self.args.max_steps,
-                **self.data_curriculum_cfg.pacing_fn_kwargs,
-            )
-
-            difficulty_scorer = get_difficulty_scorer(
-                self.data_curriculum_cfg.difficulty_scorer_name,
-                self.data_curriculum_cfg.difficulty_scorer_kwargs,
-                trainer=self,
-            )
-
-            if self.args.world_size <= 1:
-                return CurriculumSampler(
-                    self.train_dataset,
-                    difficulty_scorer=difficulty_scorer,
-                    pacing_fn=pacing_fn,
+                self._train_sampler = SleepSampler(
+                    dataset=self.train_dataset,
                     batch_size=self.args.per_device_train_batch_size,
-                    generator=generator,
-                    global_stepnum=self.state.global_step,
+                    replay_ratio=self.sleep_mechanism_cfg.replay_ratio,
+                    n_phases=self.sleep_mechanism_cfg.n_phases,
+                    max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
+                    contextualize_sleep=True,
+                    n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
                 )
+            elif self.data_curriculum_cfg:
+                # A data-driven curriculum assumes we are using a difficulty scorer along with a
+                # curriculum pacing function to determine the order in which we sample data.
+
+                pacing_fn = get_pacing_fn(
+                    self.data_curriculum_cfg.pacing_fn_name,
+                    self.args.max_steps,
+                    **self.data_curriculum_cfg.pacing_fn_kwargs,
+                )
+
+                difficulty_scorer = get_difficulty_scorer(
+                    self.data_curriculum_cfg.difficulty_scorer_name,
+                    self.data_curriculum_cfg.difficulty_scorer_kwargs,
+                    trainer=self,
+                )
+
+                if self.args.world_size <= 1:
+                    self._train_sampler = CurriculumSampler(
+                        self.train_dataset,
+                        difficulty_scorer=difficulty_scorer,
+                        pacing_fn=pacing_fn,
+                        batch_size=self.args.per_device_train_batch_size,
+                        generator=generator,
+                        global_stepnum=self.state.global_step,
+                    )
+                else:
+                    self._train_sampler = DistributedCurriculumSampler(
+                        self.train_dataset,
+                        difficulty_scorer=difficulty_scorer,
+                        pacing_fn=pacing_fn,
+                        batch_size=self.args.per_device_train_batch_size,
+                        generator=generator,
+                        global_stepnum=self.state.global_step,
+                        num_replicas=self.args.world_size,
+                        rank=self.args.process_index,
+                        seed=seed,
+                    )
             else:
-                return DistributedCurriculumSampler(
-                    self.train_dataset,
-                    difficulty_scorer=difficulty_scorer,
-                    pacing_fn=pacing_fn,
-                    batch_size=self.args.per_device_train_batch_size,
-                    generator=generator,
-                    global_stepnum=self.state.global_step,
-                    num_replicas=self.args.world_size,
-                    rank=self.args.process_index,
-                    seed=seed,
-                )
-        else:
-            # We are not using a data-driven curriculum, so we can use the default sampler.
-            if self.args.world_size <= 1:
-                return RandomSampler(self.train_dataset, generator=generator)  # type: ignore
-            else:
-                return DistributedSampler(
-                    self.train_dataset,
-                    num_replicas=self.args.world_size,
-                    rank=self.args.process_index,
-                    seed=seed,
-                )
+                # We are not using a data-driven curriculum, so we can use the default sampler.
+                if self.args.world_size <= 1:
+                    self._train_sampler = RandomSampler(self.train_dataset, generator=generator)  # type: ignore
+                else:
+                    self._train_sampler = DistributedSampler(
+                        self.train_dataset,
+                        num_replicas=self.args.world_size,
+                        rank=self.args.process_index,
+                        seed=seed,
+                    )
+        return self._train_sampler
 
     def _get_ignore_columns(self, dataset) -> List[str]:
         """
@@ -565,6 +569,7 @@ class CustomTrainer(Trainer):
         # compute_loss() runs once per batch during training (right when model does gradient update)
         # incrementing here ensures we take one step per gradient update
         self.global_step += 1
+        self.phase_step += 1
         
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
@@ -882,61 +887,93 @@ class CustomTrainer(Trainer):
         
     def train(self, resume_from_checkpoint=None, *args, **kwargs):
         """
-        Override train to implement wake-sleep cycles when using sleep mechanism.
+        Override train to re-intialize phase steps.
         """
-
-        if not self.sleep_mechanism_cfg:
-            # standard training if not using sleep mechanism
-            return super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs) #CHANGED from super().super().train to super().train
+        self.phase_steps = 0
+        return super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs) #CHANGED from super().super().train to super().train
         
-        # sleep-consolidated training
-        logger.info("Starting Sleep-Consolidated Training")
-        logger.info(f"N phases: {self.sleep_mechanism_cfg.n_phases}")
-        logger.info(f"Replay ratio: {self.sleep_mechanism_cfg.replay_ratio}")
+    #     # sleep-consolidated training
+    #     logger.info("Starting Sleep-Consolidated Training")
+    #     logger.info(f"N phases: {self.sleep_mechanism_cfg.n_phases}")
+    #     logger.info(f"Replay ratio: {self.sleep_mechanism_cfg.replay_ratio}")
 
-        sampler = self.get_train_dataloader().sampler
+    #     sampler = self.get_train_dataloader().sampler
 
-        for cycle in range(self.sleep_mechanism_cfg.n_phases):
-            logger.info("\n")
-            logger.info(f"Cycle {cycle + 1} / {self.sleep_mechanism_cfg.n_phases}")
-            logger.info("\n")
+    #     for cycle in range(self.sleep_mechanism_cfg.n_phases):
+    #         logger.info("\n")
+    #         logger.info(f"Cycle {cycle + 1} / {self.sleep_mechanism_cfg.n_phases}")
+    #         logger.info("\n")
 
-            # WAKE PHASE
-            logger.info(f"\n[WAKE PHASE] Training on fold {cycle} ...")
-            sampler.switch_phase("WAKE")
+    #         # WAKE PHASE
+    #         logger.info(f"\n[WAKE PHASE] Training on fold {cycle} ...")
+    #         sampler.switch_phase("WAKE")
 
-            # train for one fold
-            if cycle == 0 and resume_from_checkpoint is not None:
-                super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs)
-            else:
-                super().train(*args, **kwargs)
+    #         # train for one fold
+    #         if cycle == 0 and resume_from_checkpoint is not None:
+    #             super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs)
+    #         elif cycle == 0:
+    #             super().train(*args, **kwargs)
+    #         else:
+    #             super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs)
 
+    #         # save model after each phase to preserve global_steps
+            
 
-            # SLEEP PHASE
-            logger.info(f"\n[SLEEP PHASE] Consolidating difficult samples ...")
-            sampler.switch_phase("SLEEP")
+    #         # SLEEP PHASE
+    #         logger.info(f"\n[SLEEP PHASE] Consolidating difficult samples ...")
+    #         sampler.switch_phase("SLEEP")
 
-            # Evaluate before sleep phase
-            logger.info(f"Running evaluation before sleep phase {cycle}...")
-            self.evaluate(metric_key_prefix=f"eval_before_sleep_{cycle}")
+    #         # Evaluate before sleep phase
+    #         logger.info(f"Running evaluation before sleep phase {cycle}...")
+    #         self.evaluate(metric_key_prefix=f"eval_before_sleep_{cycle}")
 
-            if len(sampler.replay_buffer) > 0:
-                # train on replay buffer
-                sleep_steps = self.sleep_mechanism_cfg.sleep_max_steps
+    #         if len(sampler.replay_buffer) > 0:
+    #             # train on replay buffer
+    #             sleep_steps = self.sleep_mechanism_cfg.sleep_max_steps
                 
-                # modify max_steps for sleep phase
-                original_max_steps = self.args.max_steps
-                self.args.max_steps = self.state.global_step + sleep_steps
+    #             # modify max_steps for sleep phase
+    #             original_max_steps = self.args.max_steps
+    #             self.args.max_steps = self.state.global_step + sleep_steps
 
-                super().train(*args, **kwargs)
+    #             super().train(*args, **kwargs)
 
-                # revert to original max_steps
-                self.args.max_steps = original_max_steps
+    #             # revert to original max_steps
+    #             self.args.max_steps = original_max_steps
 
-                logger.info("Completed sleep consolidation.")
+    #             logger.info("Completed sleep consolidation.")
 
-            # Evaluate after sleep phase
-            logger.info(f"Running evaluation after sleep phase {cycle}...")
-            self.evaluate(metric_key_prefix=f"eval_after_sleep_{cycle}")
+    #         # Evaluate after sleep phase
+    #         logger.info(f"Running evaluation after sleep phase {cycle}...")
+    #         self.evaluate(metric_key_prefix=f"eval_after_sleep_{cycle}")
 
-            # TODO: Implement Plasticity Decay Mechanism
+    #         # TODO: Implement Plasticity Decay Mechanism
+
+class SleepCallback(TrainerCallback):
+    def __init__(self, n_phases):
+        self.n_phases = n_phases
+    
+    def on_step_end(self, args, state, control, **kwargs):
+        trainer = kwargs["trainer"]
+        sleep_cfg = trainer.sleep_mechanism_cfg
+        sampler = trainer.get_train_dataloader().sampler
+        
+        # if wake phase over, reset phase steps, eval, then switch
+        if sampler.phase == "WAKE" and trainer.phase_steps >= sleep_cfg.wake_block_steps:
+            logger.info("Ending WAKE phase...")
+            trainer.phase_steps = 0
+            # eval before sleep
+            logger.info("Running evaluation before sleep phase...")
+            trainer.evaluate(metric_key_prefix="eval_before_sleep")
+            logger.info("Switching to SLEEP phase...")
+            sampler.switch_phase("SLEEP")
+        elif sampler.phase == "SLEEP" and trainer.phase_steps >= sleep_cfg.sleep_max_steps:
+            logger.info("Ending SLEEP phase...")
+            trainer.phase_steps = 0
+            # eval before sleep
+            logger.info("Running evaluation after sleep phase...")
+            trainer.evaluate(metric_key_prefix="eval_after_sleep")
+            logger.info("Switching to WAKE phase...")
+            sampler.switch_phase("WAKE")
+        logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
+        logger.info("Rebulding train dataloader...")
+        trainer._train_dataloader = None
