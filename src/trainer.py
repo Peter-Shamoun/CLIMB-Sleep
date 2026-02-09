@@ -544,9 +544,7 @@ class CustomTrainer(Trainer):
             and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
         )
         logger.info(f"Track per-sample loss: {track_per_sample}")
-        logger.info(f"Units: {self.objective_curriculum[
-            self.state.global_step
-        ].items()}")
+        logger.info(f"Units: {self.objective_curriculum[self.state.global_step].items()}")
         for unit_name, unit in self.objective_curriculum[
             self.state.global_step
         ].items():
