@@ -553,8 +553,8 @@ class CustomTrainer(Trainer):
                     model, inputs, return_per_sample_loss=True
                 )
                 # Add per-sample losses to the replay buffer
-                if "input_ids" in inputs:
-                    indices = inputs["input_ids"].tolist()
+                if "indices" in inputs:
+                    indices = inputs["indices"].tolist()
                     losses = per_sample_losses.detach().cpu().tolist()
                     self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
                     logger.info(f"Sleep Sampler candidates size: {len(self.callback_handler.train_dataloader.sampler.wake_candidates)}")
