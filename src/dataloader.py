@@ -187,3 +187,85 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
                 data.pop(ignore_column, None)
 
         return data
+
+class SleepDataLoader(DataLoader):
+    def __init__(
+        self,
+        global_stepnum: int,
+        tokenizer: PreTrainedTokenizerFast,
+        ignore_columns: Optional[List[str]] = None,
+        num_workers: int = 0,
+        **kwargs,
+    ) -> None:
+
+        self.global_stepnum = global_stepnum
+        self.tokenizer = tokenizer
+        self.ignore_columns = ignore_columns
+
+        if num_workers != 0:
+            # NOTE: No rush on this, the default Trainer uses 0 workers anyway and runs
+            # very fast.
+            logger.warning(
+                "Multi-process dataloading is not supported yet - using 0 workers."
+            )
+
+        super().__init__(num_workers=0, **kwargs)
+
+    def __iter__(self):
+        return _SleepSingleProcessDataLoaderIter(self)
+    
+class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
+    def __init__(self, loader: CurriculumDataLoader):
+        super().__init__(loader)
+        assert self._timeout == 0
+        assert self._num_workers == 0
+
+        self.loader = loader
+
+        if isinstance(self._dataset, (IterDataPipe, MapDataPipe)):
+            raise NotImplementedError(
+                "IterDataPipe and MapDataPipe are not supported yet"
+            )
+
+        self._dataset_fetcher = _DatasetKind.create_fetcher(
+            self._dataset_kind,
+            self._dataset,
+            self._auto_collation,
+            self._collate_fn,
+            self._drop_last,
+        )
+
+    def _next_index(self):
+        idx = next(self._sampler_iter)
+        return idx
+
+    def _next_data(self):
+        """
+        Returns next data from this iterator.
+        """
+
+        index = self._next_index()  # may raise StopIteration
+
+        # store the index for sleep mechanism tracking
+        current_index = index
+
+        data: Dict[str, Tensor] = self._dataset_fetcher.fetch(
+            index
+        )  # may raise StopIteration
+
+        # add indices to data for sleep mechanism tracking
+        if isinstance(current_index, list):
+            data["indices"] = torch.tensor(current_index)
+        else:
+            data["indices"] = torch.tensor([current_index])
+            
+        if self._pin_memory:
+            data = _torch_pin_memory(data, self._pin_memory_device)  # type: ignore[arg-type]
+
+        # remove ignored columns
+        print(f"Ignore columns: {self.loader.ignore_columns}")
+        if self.loader.ignore_columns is not None:
+            for ignore_column in self.loader.ignore_columns:
+                data.pop(ignore_column, None)
+
+        return data
