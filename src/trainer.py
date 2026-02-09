@@ -579,6 +579,9 @@ class CustomTrainer(Trainer):
             self.log(loss_metrics)
 
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
+        return total_loss
+    def training_step(self, model, inputs):
+        loss = super().training_step(model, inputs)
         # == SLEEP MECHANISM == #
         if self.sleep_mechanism_cfg:
             # if wake phase over, reset phase steps, eval, then switch
@@ -600,8 +603,7 @@ class CustomTrainer(Trainer):
                 logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
                 logger.info("Rebulding train dataloader...")
                 self._train_dataloader = None
-        
-        return total_loss
+        return loss
 
     def evaluate(
         self,
