@@ -1,4 +1,5 @@
 import random
+import math
 from typing import Iterator, List, Tuple, Sequence
 
 import torch
@@ -65,32 +66,31 @@ class SleepSampler(Sampler):
         
         self.wake_pointer = 0
         
+        # Save max feasible steps for wake phase in case user-defined max exceeds
+        # data in folds
+        self.wake_max_steps = self._get_wake_max_steps()
+        
         # print(f"MAX STEPS: {len(self.dataset) // self.batch_size}")
         
     def __iter__(self):
         # If wake phase:
         #   Shuffle data in fold randomly
         #   append to batch until batch size is met
-        if self.phase == "WAKE":
-            for i in self.folds[self.curr_fold]:
-                yield i
-        # If sleep phase:
-        elif self.phase == "SLEEP":
-            if not self.replay_buffer:
-                # No data to replay, switch back to WAKE
-                print("Replay buffer empty, switching back to WAKE phase.")
-                self.switch_phase("WAKE")
-                return self.__iter__()
-            
-            # use contextualized chunks if available, otherwise use replay buffer
-            indices_to_sample = (
-                self.contextualized_chunks 
-                if self.contextualize_sleep and self.contextualized_chunks 
-                else self.replay_buffer
-            )
+        while True:
+            if self.phase == "WAKE":
+                for i in self.folds[self.curr_fold]:
+                    yield i
+            # If sleep phase:
+            elif self.phase == "SLEEP":
+                # use contextualized chunks if available, otherwise use replay buffer
+                indices_to_sample = (
+                    self.contextualized_chunks 
+                    if self.contextualize_sleep and self.contextualized_chunks 
+                    else self.replay_buffer
+                )
 
-            for i in indices_to_sample:
-                yield i
+                for i in indices_to_sample:
+                    yield i
             
 
     def add_to_candidates(self, indices: List[int], losses: List[float]):
@@ -100,8 +100,9 @@ class SleepSampler(Sampler):
             indices: List of sample indices.
             losses: List of per-sample loss values.
         """
-        if self.phase != "WAKE": # can only add during WAKE phase
-            return
+        #Can only add during WAKE phase
+        assert self.phase == "WAKE", "Attempted to update wake candidates during sleep phase."
+        
         for idx, loss in zip(indices, losses):
             # Store or update with max loss seen for this index
             loss_val = float(loss)
@@ -139,10 +140,10 @@ class SleepSampler(Sampler):
             self.replay_buffer = []
             self.wake_candidates = {}
             self.contextualized_chunks = []
-            # Reset dataset pointer for next wake phase
+            # Increment fold tracker and re-init max steps
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
-            self.wake_pointer = 0
-
+            self.wake_max_steps = self.get_wake_max_steps()
+            
         self.phase = new_phase
 
     def __len__(self):
@@ -204,3 +205,9 @@ class SleepSampler(Sampler):
             self.replay_buffer = random.sample(candidate_indices, num_replay)
         if self.contextualize_sleep:
             self.replay_buffer = self.contextualize_buffer()
+    
+    def get_wake_max_steps(self):
+        """
+        Returns the max steps possible for this wake phase based on the size of the buffer.
+        """
+        return math.ceil(len(self.folds[self.curr_fold]) / self.batch_size)

@@ -598,21 +598,8 @@ class CustomTrainer(Trainer):
                 "SLEEP": self.sleep_mechanism_cfg.sleep_max_steps
             }
             if self.phase_steps >= phase_maxes[phase]:
-                logger.info(f"Ending {phase} phase...")
-                self.phase_steps = 0
-                # eval before sleep
-                logger.info(f"Running evaluation before {next_phase} phase...")
-                self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
-                logger.info(f"Switching to {next_phase} phase...")
-                sampler.switch_phase(next_phase)
-                if next_phase == "SLEEP":
-                    logger.info(f"Contextualize?: {sampler.contextualize_sleep}")
-                    logger.info(f"num candidates: {len(sampler.wake_candidates)}")
-                    logger.info(f"Replay Buffer Size: {len(sampler.replay_buffer)}")
-                    
-                logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
-                logger.info("Rebuilding train dataloader...")
-                self._train_dataloader = None
+                self._swap_phase(sampler, phase, next_phase)
+            if self.callback_handler.train_dataloader
         
         return loss
 
@@ -925,3 +912,20 @@ class CustomTrainer(Trainer):
         """
         self.phase_steps = 0
         return super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs) #CHANGED from super().super().train to super().train
+    
+    def _swap_phase(self, sampler, phase, next_phase):
+        logger.info("Ending %s phase...", phase)
+        self.phase_steps = 0
+        # eval before sleep
+        logger.info("Running evaluation before %s phase...", next_phase)
+        self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
+        logger.info("Switching to %s phase...", next_phase)
+        sampler.switch_phase(next_phase)
+        if next_phase == "SLEEP":
+            logger.info("Contextualize?: %s", sampler.contextualize_sleep)
+            logger.info("num candidates: %d", len(sampler.wake_candidates))
+            logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
+            
+        logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
+        logger.info("Rebuilding train dataloader...")
+        self._train_dataloader = None

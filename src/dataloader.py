@@ -211,7 +211,7 @@ class SleepDataLoader(DataLoader):
         return _SleepSingleProcessDataLoaderIter(self)
     
 class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
-    def __init__(self, loader: CurriculumDataLoader):
+    def __init__(self, loader: SleepDataLoader):
         super().__init__(loader)
         assert self._timeout == 0
         assert self._num_workers == 0
