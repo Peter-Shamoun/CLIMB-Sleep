@@ -139,7 +139,10 @@ def main(cfg: BabyLMConfig):
         do_predict=False,
         per_device_train_batch_size=cfg.trainer.batch_size,  # NOTE: We can should maybe use auto_find_batch_size
         learning_rate=cfg.trainer.lr,
-        max_steps=cfg.trainer.max_training_steps,
+        max_steps=((cfg.sleep_mechanism.wake_blocK_steps 
+                    + cfg.sleep_mechanism.sleep_max_steps) 
+                   * cfg.sleep_mechanism.n_phases
+            if cfg.sleep_mechanism else cfg.trainer.max_training_steps),
         warmup_steps=cfg.trainer.num_warmup_steps,
         seed=cfg.experiment.seed,
         eval_strategy="steps",
