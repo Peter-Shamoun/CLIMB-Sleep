@@ -20,6 +20,7 @@ experiment:
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
   name: "test"
+  output_dir: "/mnt/data"
 
 data_preprocessing:
   include_punctuation: True

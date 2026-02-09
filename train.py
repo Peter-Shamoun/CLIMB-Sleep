@@ -135,7 +135,7 @@ def main(cfg: BabyLMConfig):
                    * cfg.sleep_mechanism.n_phases
             if cfg.sleep_mechanism else cfg.trainer.max_training_steps)
     training_args = TrainingArguments(
-        output_dir=f"checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
+        output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
         # overwrite_output_dir=False,
         do_train=True,
         do_eval=True,

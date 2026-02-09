@@ -34,6 +34,8 @@ class ExperimentParams(DictConfig):
     # we need to specify the run_id of the run we are resuming from
     resume_run_id: Optional[str] = None
 
+    # Directory where outputs are saved, ex: model checkpoints, eval results
+    output_dir: str = MISSING
 
 @dataclass
 class DatasetParams(DictConfig):
