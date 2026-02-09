@@ -597,9 +597,9 @@ class CustomTrainer(Trainer):
                 self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
                 logger.info(f"Switching to {next_phase} phase...")
                 sampler.switch_phase(next_phase)
-            logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
-            logger.info("Rebulding train dataloader...")
-            self._train_dataloader = None
+                logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
+                logger.info("Rebulding train dataloader...")
+                self._train_dataloader = None
         
         return total_loss
 
