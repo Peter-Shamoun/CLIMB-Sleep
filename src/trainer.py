@@ -586,8 +586,8 @@ class CustomTrainer(Trainer):
             phase = sampler.phase
             next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
             phase_maxes = {
-                "SLEEP": self.sleep_mechanism_cfg.wake_block_steps, 
-                "WAKE": self.sleep_mechanism_cfg.sleep_max_steps
+                "WAKE": self.sleep_mechanism_cfg.wake_block_steps, 
+                "SLEEP": self.sleep_mechanism_cfg.sleep_max_steps
             }
             if self.phase_steps >= phase_maxes[phase]:
                 logger.info(f"Ending {phase} phase...")
