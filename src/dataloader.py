@@ -5,6 +5,7 @@ import logging
 # typing imports
 from typing import Dict, List, Optional
 
+import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.pin_memory import pin_memory as _torch_pin_memory
@@ -136,7 +137,7 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             have not been masked or otherwise processed.
             """
             batch = collate_fn(*args, **kwargs)
-            batch.update(base_collate_fn(*args, **kwargs))
+            # batch.update(base_collate_fn(*args, **kwargs))
             return batch
 
         self._dataset_fetcher = _DatasetKind.create_fetcher(
@@ -152,11 +153,11 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         )  # may raise StopIteration
 
         # add indices to data for sleep mechanism tracking
-        import torch
         if isinstance(current_index, list):
             data["indices"] = torch.tensor(current_index)
         else:
             data["indices"] = torch.tensor([current_index])
+            
         if self._pin_memory:
             data = _torch_pin_memory(data, self._pin_memory_device)  # type: ignore[arg-type]
 
