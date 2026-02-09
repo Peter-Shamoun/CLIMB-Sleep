@@ -594,10 +594,12 @@ class CustomTrainer(Trainer):
             phase = sampler.phase
             next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
             phase_maxes = {
-                "WAKE": self.sleep_mechanism_cfg.wake_block_steps, 
+                "WAKE": min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps), 
                 "SLEEP": self.sleep_mechanism_cfg.sleep_max_steps
             }
             if self.phase_steps >= phase_maxes[phase]:
+                if self.sleep_mechanism_cfg.wake_block_steps > sampler.wake_max_steps:
+                    logger.info("WARNING: The selected WAKE phase max steps exceeds the size of the current fold. Ending WAKE phase early.")
                 self._swap_phase(sampler, phase, next_phase)
             if self.callback_handler.train_dataloader
         
