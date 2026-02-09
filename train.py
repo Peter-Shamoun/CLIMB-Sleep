@@ -22,7 +22,7 @@ from src.config import BabyLMConfig
 from src.evaluator import collect_results
 from src.models import load_base_model
 from src.tokenizer import load_tokenizer
-from src.trainer import CustomTrainer, SleepCallback
+from src.trainer import CustomTrainer
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
 
