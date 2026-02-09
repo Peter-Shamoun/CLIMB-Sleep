@@ -543,8 +543,8 @@ class CustomTrainer(Trainer):
             and hasattr(self.callback_handler.train_dataloader.sampler, 'phase')
             and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
         )
-        logger.info(f"Track per-sample loss: {track_per_sample}")
-        logger.info(f"Units: {self.objective_curriculum[self.state.global_step].items()}")
+        # logger.info(f"Track per-sample loss: {track_per_sample}")
+        # logger.info(f"Units: {self.objective_curriculum[self.state.global_step].items()}")
         for unit_name, unit in self.objective_curriculum[
             self.state.global_step
         ].items():
@@ -552,6 +552,7 @@ class CustomTrainer(Trainer):
                 unit_loss, per_sample_losses = unit.compute_loss(
                     model, inputs, return_per_sample_loss=True
                 )
+                logger.info(f"inputs: {inputs}")
                 # Add per-sample losses to the replay buffer
                 if "indices" in inputs:
                     indices = inputs["indices"].tolist()
