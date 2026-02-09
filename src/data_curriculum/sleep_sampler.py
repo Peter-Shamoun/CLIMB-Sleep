@@ -79,8 +79,7 @@ class SleepSampler(Sampler):
             if not self.replay_buffer:
                 # No data to replay, switch back to WAKE
                 print("Replay buffer empty, switching back to WAKE phase.")
-                self.phase = "WAKE"
-                self.wake_pointer = 0
+                self.switch_phase("WAKE")
                 return self.__iter__()
             
             # use contextualized chunks if available, otherwise use replay buffer
