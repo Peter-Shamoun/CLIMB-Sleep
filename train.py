@@ -203,6 +203,7 @@ def main(cfg: BabyLMConfig):
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
+    logger.info("Training complete!")
     # trainer.eval_glue = True
     # trainer.eval_msgs = True
     # trainer.eval_blimp = True
