@@ -130,7 +130,7 @@ def main(cfg: BabyLMConfig):
     # initialize the name of the current experiment so that it doesn't interfere with the name
     # of other experiments, and also so that we can store checkpoints of that run on HF hub;
     # alternatively maybe we use ray tune which is natively supported by Trainer
-    max_training_steps = ((cfg.sleep_mechanism.wake_blocK_steps 
+    max_training_steps = ((cfg.sleep_mechanism.wake_block_steps 
                     + cfg.sleep_mechanism.sleep_max_steps) 
                    * cfg.sleep_mechanism.n_phases
             if cfg.sleep_mechanism else cfg.trainer.max_training_steps)
