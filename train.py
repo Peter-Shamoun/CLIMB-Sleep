@@ -130,7 +130,10 @@ def main(cfg: BabyLMConfig):
     # initialize the name of the current experiment so that it doesn't interfere with the name
     # of other experiments, and also so that we can store checkpoints of that run on HF hub;
     # alternatively maybe we use ray tune which is natively supported by Trainer
-
+    max_training_steps = ((cfg.sleep_mechanism.wake_blocK_steps 
+                    + cfg.sleep_mechanism.sleep_max_steps) 
+                   * cfg.sleep_mechanism.n_phases
+            if cfg.sleep_mechanism else cfg.trainer.max_training_steps)
     training_args = TrainingArguments(
         output_dir=f"checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
         # overwrite_output_dir=False,
@@ -139,20 +142,17 @@ def main(cfg: BabyLMConfig):
         do_predict=False,
         per_device_train_batch_size=cfg.trainer.batch_size,  # NOTE: We can should maybe use auto_find_batch_size
         learning_rate=cfg.trainer.lr,
-        max_steps=((cfg.sleep_mechanism.wake_blocK_steps 
-                    + cfg.sleep_mechanism.sleep_max_steps) 
-                   * cfg.sleep_mechanism.n_phases
-            if cfg.sleep_mechanism else cfg.trainer.max_training_steps),
+        max_steps=max_training_steps,
         warmup_steps=cfg.trainer.num_warmup_steps,
         seed=cfg.experiment.seed,
         eval_strategy="steps",
-        eval_steps=cfg.trainer.max_training_steps
+        eval_steps=max_training_steps
         // (2 if cfg.experiment.dry_run else 8),  # eval every 25% of training
-        save_steps=cfg.trainer.max_training_steps
+        save_steps=max_training_steps
         // (
             2 if cfg.experiment.dry_run else 8
         ),  # checkpoint every 25% of training
-        logging_steps=cfg.trainer.max_training_steps
+        logging_steps=max_training_steps
         // (
             100 if cfg.experiment.dry_run else 1000
         ),  # log every 0.1% of training
