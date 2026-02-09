@@ -45,6 +45,7 @@ from src.utils.inference import (
     compute_trainer_perplexity,
     prepare_dataset_for_ppl_inference,
 )
+from src.data_curriculum.contextualize_collate import context_augmented_collate
 from wandb import Table
 
 # typing imports
@@ -60,7 +61,7 @@ from .data_curriculum.difficulty_scorer import get_difficulty_scorer
 from .data_curriculum.pacing_fn import get_pacing_fn
 
 # Curriculum Data Loader (used for both objective and data-driven curriculum)
-from .dataloader import CurriculumDataLoader
+from .dataloader import CurriculumDataLoader, SleepDataLoader
 
 # Model Evaluation
 from .evaluator import BlimpEvaluator, FinetuneEvaluator
@@ -454,7 +455,6 @@ class CustomTrainer(Trainer):
 
         # check if using sleep mechanism w/ SleepSampler
         if self.sleep_mechanism_cfg and isinstance(train_sampler, SleepSampler):
-            from src.data_curriculum.contextualize_collate import context_augmented_collate
 
             # create collate function
             def collate_fn(batch):
@@ -467,7 +467,7 @@ class CustomTrainer(Trainer):
                 else:
                     return base_collate_fn(batch)
                 
-            return DataLoader(
+            return SleepDataLoader(
                 dataset=train_dataset,
                 sampler=train_sampler,
                 batch_size=self._train_batch_size,
