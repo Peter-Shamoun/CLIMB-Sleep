@@ -73,7 +73,6 @@ class SleepSampler(Sampler):
             for i in self.folds[self.curr_fold]:
                 yield i
         # If sleep phase:
-        #   Sample from replay buffer based on loss (higher loss = higher prob) 
         elif self.phase == "SLEEP":
             if not self.replay_buffer:
                 # No data to replay, switch back to WAKE

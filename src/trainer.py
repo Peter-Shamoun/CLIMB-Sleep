@@ -602,6 +602,11 @@ class CustomTrainer(Trainer):
                 self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
                 logger.info(f"Switching to {next_phase} phase...")
                 sampler.switch_phase(next_phase)
+                if next_phase == "SLEEP":
+                    logger.info(f"Contextualize?: {sampler.contextualize_sleep}")
+                    logger.info(f"num candidates: {len(sampler.wake_candidates)}")
+                    logger.info(f"Replay Buffer Size: {len(sampler.replay_buffer)}")
+                    
                 logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
                 logger.info("Rebulding train dataloader...")
                 self._train_dataloader = None

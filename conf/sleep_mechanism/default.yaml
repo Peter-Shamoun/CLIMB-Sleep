@@ -11,4 +11,4 @@ replay_ratio: 0.1
 n_augmentations: 40
 n_phases: 500
 max_seq_length: 128
-contextualize_sleep: true
+contextualize_sleep: True
