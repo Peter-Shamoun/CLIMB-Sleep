@@ -14,6 +14,9 @@ class ExperimentParams(DictConfig):
     # Name of the experiment - needs to be set at runtime
     name: str = MISSING
 
+    # Name of wandb entity experiment belongs to
+    entity: str = MISSING
+    
     # Name of the group that the current experiment belongs to
     # analogous to 'project' in wandb
     group: str = MISSING
@@ -31,6 +34,8 @@ class ExperimentParams(DictConfig):
     # we need to specify the run_id of the run we are resuming from
     resume_run_id: Optional[str] = None
 
+    # Directory where outputs are saved, ex: model checkpoints, eval results
+    output_dir: str = MISSING
 
 @dataclass
 class DatasetParams(DictConfig):
@@ -77,6 +82,8 @@ class TrainerParams(DictConfig):
     eval_glue: bool
     eval_msgs: bool
     eval_perplexity: bool
+    n_eval_samples: int
+    eval_batch_size: int
 
 
 ### Curriculum learning parameter: can be either objective or data-driven ###

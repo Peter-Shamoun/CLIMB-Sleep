@@ -22,7 +22,7 @@ from src.config import BabyLMConfig
 from src.evaluator import collect_results
 from src.models import load_base_model
 from src.tokenizer import load_tokenizer
-from src.trainer import CustomTrainer
+from src.trainer import CustomTrainer, SleepCallback
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
 
@@ -99,7 +99,7 @@ def main(cfg: BabyLMConfig):
     else:
         # These environment variables get picked up by Trainer
         os.environ["WANDB_PROJECT"] = cfg.experiment.group
-        os.environ["WANDB_ENTITY"] = "lemn-lab"
+        os.environ["WANDB_ENTITY"] = cfg.experiment.entity
         wandb.config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
         )
@@ -115,7 +115,7 @@ def main(cfg: BabyLMConfig):
         # Check if we're on process 0
         if int(os.environ.get("RANK", "0")) == 0:
             wandb.init(
-                entity="lemn-lab",
+                entity=cfg.experiment.entity,
                 project=cfg.experiment.group,
                 name=cfg.experiment.name,
                 config=wandb.config,  # type: ignore
@@ -130,26 +130,41 @@ def main(cfg: BabyLMConfig):
     # initialize the name of the current experiment so that it doesn't interfere with the name
     # of other experiments, and also so that we can store checkpoints of that run on HF hub;
     # alternatively maybe we use ray tune which is natively supported by Trainer
-
+    if cfg.sleep_mechanism:
+        theoretical_max_steps = ((cfg.sleep_mechanism.wake_block_steps 
+                                + cfg.sleep_mechanism.sleep_max_steps) 
+                                * cfg.sleep_mechanism.n_phases)
+        empirical_max_steps = ((len(train_dataset) 
+                                + (len(train_dataset) 
+                                    * cfg.sleep_mechanism.replay_ratio
+                                    * cfg.sleep_mechanism.n_augmentations
+                                    )
+                                )
+                                // cfg.trainer.batch_size)
+        logger.info("Theretical max steps: %d", theoretical_max_steps)
+        logger.info("Empirical max steps: %d", empirical_max_steps)
+        max_training_steps = min(theoretical_max_steps, empirical_max_steps)
+    else:
+        max_training_steps = cfg.trainer.max_training_steps
     training_args = TrainingArguments(
-        output_dir=f"checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
+        output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
         # overwrite_output_dir=False,
         do_train=True,
         do_eval=True,
         do_predict=False,
         per_device_train_batch_size=cfg.trainer.batch_size,  # NOTE: We can should maybe use auto_find_batch_size
         learning_rate=cfg.trainer.lr,
-        max_steps=cfg.trainer.max_training_steps,
+        max_steps=max_training_steps,
         warmup_steps=cfg.trainer.num_warmup_steps,
         seed=cfg.experiment.seed,
         eval_strategy="steps",
-        eval_steps=cfg.trainer.max_training_steps
+        eval_steps=max_training_steps
         // (2 if cfg.experiment.dry_run else 8),  # eval every 25% of training
-        save_steps=cfg.trainer.max_training_steps
+        save_steps=max_training_steps
         // (
             2 if cfg.experiment.dry_run else 8
         ),  # checkpoint every 25% of training
-        logging_steps=cfg.trainer.max_training_steps
+        logging_steps=max_training_steps
         // (
             100 if cfg.experiment.dry_run else 1000
         ),  # log every 0.1% of training
@@ -181,19 +196,17 @@ def main(cfg: BabyLMConfig):
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         curriculum_learning_table=None,
+        # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
 
     if not cfg.experiment.resume_checkpoint_path:
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
-    # Always evaluate the best model at the end of training, on every metric.
-    # Note that passing load_best_model_at_end=True to the trainer will load the best model at
-    # the end of training, so we don't need to do it here
-    trainer.eval_glue = True
-    trainer.eval_msgs = True
-    trainer.eval_blimp = True
-    trainer.eval_perplexity = True
+    # trainer.eval_glue = True
+    # trainer.eval_msgs = True
+    # trainer.eval_blimp = True
+    # trainer.eval_perplexity = True
     trainer.evaluate(
         metric_key_prefix="eval_best"
     )  # Note that this will also save the best model in the main output directory

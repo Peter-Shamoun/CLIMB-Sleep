@@ -65,6 +65,8 @@ class SleepSampler(Sampler):
         
         self.wake_pointer = 0
         
+        print(f"MAX STEPS: {len(self.dataset) // self.batch_size}")
+        
     def __iter__(self):
         # If wake phase:
         #   Shuffle data in fold randomly
@@ -73,13 +75,11 @@ class SleepSampler(Sampler):
             for i in self.folds[self.curr_fold]:
                 yield i
         # If sleep phase:
-        #   Sample from replay buffer based on loss (higher loss = higher prob) 
         elif self.phase == "SLEEP":
             if not self.replay_buffer:
                 # No data to replay, switch back to WAKE
                 print("Replay buffer empty, switching back to WAKE phase.")
-                self.phase = "WAKE"
-                self.wake_pointer = 0
+                self.switch_phase("WAKE")
                 return self.__iter__()
             
             # use contextualized chunks if available, otherwise use replay buffer
@@ -106,8 +106,8 @@ class SleepSampler(Sampler):
             # Store or update with max loss seen for this index
             loss_val = float(loss)
             if idx in self.wake_candidates:
-                # Keep the higher loss if we've seen this sample before
-                self.wake_candidates[idx] = max(self.wake_candidates[idx], loss_val)
+                # Keep the lower loss if we've seen this sample before
+                self.wake_candidates[idx] = min(self.wake_candidates[idx], loss_val)
             else:
                 self.wake_candidates[idx] = loss_val
 
