@@ -191,15 +191,11 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
 class SleepDataLoader(DataLoader):
     def __init__(
         self,
-        global_stepnum: int,
-        tokenizer: PreTrainedTokenizerFast,
         ignore_columns: Optional[List[str]] = None,
         num_workers: int = 0,
         **kwargs,
     ) -> None:
 
-        self.global_stepnum = global_stepnum
-        self.tokenizer = tokenizer
         self.ignore_columns = ignore_columns
 
         if num_workers != 0:
