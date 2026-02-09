@@ -204,7 +204,7 @@ class SleepSampler(Sampler):
             candidate_indices = list(self.wake_candidates.keys())
             self.replay_buffer = random.sample(candidate_indices, num_replay)
         if self.contextualize_sleep:
-            self.replay_buffer = self.contextualize_buffer()
+            self.contextualized_chunks = self.contextualize_buffer()
     
     def get_wake_max_steps(self):
         """
