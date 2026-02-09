@@ -569,7 +569,7 @@ class CustomTrainer(Trainer):
         # compute_loss() runs once per batch during training (right when model does gradient update)
         # incrementing here ensures we take one step per gradient update
         self.global_step += 1
-        self.phase_step += 1
+        self.phase_steps += 1
         
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
