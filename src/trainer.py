@@ -558,7 +558,7 @@ class CustomTrainer(Trainer):
                     indices = inputs["indices"].tolist()
                     losses = per_sample_losses.detach().cpu().tolist()
                     self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
-                    logger.info(f"Sleep Sampler candidates size: {len(self.callback_handler.train_dataloader.sampler.wake_candidates)}")
+                    # logger.info(f"Sleep Sampler candidates size: {len(self.callback_handler.train_dataloader.sampler.wake_candidates)}")
             else:
                 unit_loss = unit.compute_loss(model, inputs)
 
