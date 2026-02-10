@@ -137,7 +137,7 @@ def main(cfg: BabyLMConfig):
         empirical_max_steps = int((len(train_dataset) 
                                 + (len(train_dataset) 
                                     * cfg.sleep_mechanism.replay_ratio
-                                    * cfg.sleep_mechanism.n_augmentations
+                                    * (cfg.sleep_mechanism.n_augmentations + 1)
                                     )
                                 )
                                 // cfg.trainer.batch_size)
