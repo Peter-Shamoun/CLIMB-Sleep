@@ -323,6 +323,7 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
 
         while all_sentences:
             token = all_sentences.pop(0)
+            assert isinstance(token, int), f"Non-integer token ID found: {token}, {type(token)}"
             if len(current_chunk) == 1 and token == sep_token_id:
                 continue
             current_chunk.append(token)
