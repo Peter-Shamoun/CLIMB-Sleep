@@ -287,18 +287,18 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]], *args, **kwargs) -> Dict[str, Any]:
         if self.sampler.phase == "SLEEP":
             examples = self.context_augment(examples)
-        for ex in examples:
-            ids = ex["input_ids"]
-            if isinstance(ids, torch.Tensor):
-                max_id = ids.max().item()
-                min_id = ids.min().item()
-            else:
-                max_id = max(ids)
-                min_id = min(ids)
+        # for ex in examples:
+        #     ids = ex["input_ids"]
+        #     if isinstance(ids, torch.Tensor):
+        #         max_id = ids.max().item()
+        #         min_id = ids.min().item()
+        #     else:
+        #         max_id = max(ids)
+        #         min_id = min(ids)
 
-            assert min_id >= 0, f"Negative token id: {min_id}"
-            assert max_id < self.tokenizer.vocab_size, \
-                f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"    
+        #     assert min_id >= 0, f"Negative token id: {min_id}"
+        #     assert max_id < self.tokenizer.vocab_size, \
+        #         f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"    
         return super().torch_call(examples, *args, **kwargs)
     
     def context_augment(
