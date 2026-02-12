@@ -230,7 +230,7 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             )
 
         self._collate_fn = SleepCollatorForLanguageModeling(
-            sampler=loader._index_sampler,
+            sampler=loader.sampler,
             tokenizer=loader.tokenizer,
             mlm=True,
             mlm_probability=self.mlm_config['optional_kwargs']['mask_probability']
