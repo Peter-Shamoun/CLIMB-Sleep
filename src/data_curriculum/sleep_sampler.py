@@ -84,9 +84,7 @@ class SleepSampler(Sampler):
             elif self.phase == "SLEEP":
                 # use contextualized chunks if available, otherwise use replay buffer
                 indices_to_sample = (
-                    self.contextualized_chunks 
-                    if self.contextualize_sleep and self.contextualized_chunks 
-                    else self.replay_buffer
+                    self.contextualized_chunks if self.contextualize_sleep and self.contextualized_chunks else self.replay_buffer
                 )
 
                 for i in indices_to_sample:
@@ -132,6 +130,7 @@ class SleepSampler(Sampler):
                 if self.contextualize_sleep:
                     self.contextualized_chunks = self.contextualize_buffer()
             else:
+                raise ValueError("Replay Buffer is Empty")
                 self.replay_buffer = []
 
         elif new_phase == "WAKE":
