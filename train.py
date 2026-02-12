@@ -195,7 +195,12 @@ def main(cfg: BabyLMConfig):
         curriculum_learning_table=None,
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
-
+    dl = trainer.get_train_dataloader()
+    batch = next(iter(dl))
+    print(batch.keys())
+    print("Masked input_ids:\n", batch["input_ids"])
+    print("Labels:\n", batch["labels"])
+    exit()
     if not cfg.experiment.resume_checkpoint_path:
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
