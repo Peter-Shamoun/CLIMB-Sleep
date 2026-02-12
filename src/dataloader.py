@@ -287,7 +287,7 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]], *args, **kwargs) -> Dict[str, Any]:
         print("Examples type:", type(examples))
         print("Stuff in examples:", type(examples[0]))
-        print("Stuff in stuff in examples:", type(examples[0][0]))
+        # print("Stuff in stuff in examples:", type(examples[0][0]))
         if self.sampler.phase == "SLEEP":
             examples = self.context_augment(examples)
         for ex in examples:
