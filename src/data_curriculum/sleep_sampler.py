@@ -79,6 +79,7 @@ class SleepSampler(Sampler):
         while True:
             if self.phase == "WAKE":
                 for i in self.folds[self.curr_fold]:
+                    assert i < len(self.dataset), f"Index {i} out of range of dataset"
                     yield i
             # If sleep phase:
             elif self.phase == "SLEEP":
@@ -88,6 +89,7 @@ class SleepSampler(Sampler):
                 )
 
                 for i in indices_to_sample:
+                    assert i < len(self.dataset), f"Index {i} out of range of dataset"
                     yield i
             
 
