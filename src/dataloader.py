@@ -233,7 +233,7 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             sampler=loader._index_sampler,
             tokenizer=loader.tokenizer,
             mlm=True,
-            mlm_probability=self.mlm_config['optinal_kwargs']['mask_probability']
+            mlm_probability=self.mlm_config['optional_kwargs']['mask_probability']
         )
         self._dataset_fetcher = _DatasetKind.create_fetcher(
             self._dataset_kind,
