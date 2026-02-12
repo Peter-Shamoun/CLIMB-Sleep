@@ -294,7 +294,7 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
             examples: List[List[int]], 
             max_seq_length: int = 128
         ) -> Dict[str, torch.Tensor]:
-        
+        print("examples to contextualize:", examples)
         
         pad_token_id = self.tokenizer.pad_token_id
         cls_token_id = self.tokenizer.cls_token_id
