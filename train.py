@@ -196,6 +196,7 @@ def main(cfg: BabyLMConfig):
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
     dl = trainer.get_train_dataloader()
+    dl.sampler.switch_phase("SLEEP")
     batch = next(iter(dl))
     print(batch.keys())
     print("Masked input_ids:\n", batch["input_ids"])
