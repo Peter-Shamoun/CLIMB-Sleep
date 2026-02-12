@@ -302,7 +302,11 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         # extract all tokens from all samples and concatenate
         all_sentences = []
 
-        for sample in examples:
+        for batch in examples:
+            if 'input_ids' in batch:
+                sample = batch['input_ids']
+            else:
+                raise ValueError("No input ids in batch")
             if isinstance(sample, torch.Tensor):
                 tokens = sample.tolist()
             else:
