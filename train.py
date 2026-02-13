@@ -69,6 +69,9 @@ def main(cfg: BabyLMConfig):
     logger.info("Initializing model")
     model = load_base_model(cfg)
 
+    if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
+        logger.info("Model and Tokenizer Mismatch - resizing model token embeddings")
+        model.resize_token_embeddings(len(tokenizer))
     assert (
         tokenizer.vocab_size == model.config.vocab_size
     ), "Tokenizer and model vocab size mismatch"
