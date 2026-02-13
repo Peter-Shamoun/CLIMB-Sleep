@@ -299,8 +299,8 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         # print("Examples checked!")
         result = super().torch_call(examples, *args, **kwargs)
         # print(result.keys())
-        print("Tok Vocab Size:", self.tokenizer.vocab_size)
-        print("Tok Length:", len(self.tokenizer))
+        # print("Tok Vocab Size:", self.tokenizer.vocab_size)
+        # print("Tok Length:", len(self.tokenizer))
         return result
     
     def context_augment(
