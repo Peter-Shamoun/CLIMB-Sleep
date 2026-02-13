@@ -74,7 +74,7 @@ def main(cfg: BabyLMConfig):
         model.resize_token_embeddings(len(tokenizer))
     assert (
         tokenizer.vocab_size == model.config.vocab_size
-    ), "Tokenizer and model vocab size mismatch"
+    ), f"Tokenizer and model vocab size mismatch: {tokenizer.vocab_size}{model.config.vocab_size}"
 
     # Preprocess data
     logger.info("Preprocessing data")
