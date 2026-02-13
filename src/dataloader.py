@@ -257,7 +257,6 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         data: Dict[str, Tensor] = self._dataset_fetcher.fetch(
             index
         )  # may raise StopIteration
-
         # add indices to data for sleep mechanism tracking
         if isinstance(index, list):
             data["indices"] = torch.tensor(index)
@@ -281,8 +280,8 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         self.sampler = sampler
         
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]], *args, **kwargs) -> Dict[str, Any]:
-        print("Examples type:", type(examples))
-        print("Stuff in examples:", type(examples[0]))
+        # print("Examples type:", type(examples))
+        # print("Stuff in examples:", type(examples[0]))
         # print("Stuff in stuff in examples:", type(examples[0][0]))
         if self.sampler.phase == "SLEEP":
             examples = self.context_augment(examples)
@@ -296,10 +295,10 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
                 min_id = min(ids)
 
             assert min_id >= 0, f"Negative token id: {min_id}"
-            print(max_id < self.tokenizer.vocab_size)# f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"
-        print("Examples checked!")
+            # print(max_id < self.tokenizer.vocab_size)# f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"
+        # print("Examples checked!")
         result = super().torch_call(examples, *args, **kwargs)
-        print(result.keys())
+        # print(result.keys())
         return result
     
     def context_augment(

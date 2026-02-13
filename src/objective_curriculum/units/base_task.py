@@ -143,7 +143,7 @@ class BaseTaskUnit(metaclass=ABCMeta):
         input_ids = (
             override_input_ids
             if override_input_ids is not None
-            else inputs[f"input_ids_{self.task_unit_name}"] if f"input_ids_{self.task_unit_name}" in inputs
+            # else inputs[f"input_ids_{self.task_unit_name}"] if f"input_ids_{self.task_unit_name}" in inputs
             else inputs["input_ids"]
         )
 
@@ -161,7 +161,7 @@ class BaseTaskUnit(metaclass=ABCMeta):
         labels = (
             override_lables
             if override_lables is not None
-            else inputs[f"labels_{self.task_unit_name}"] if f"labels_{self.task_unit_name}" in inputs
+            # else inputs[f"labels_{self.task_unit_name}"] if f"labels_{self.task_unit_name}" in inputs
             else inputs["labels"]
         )
 
