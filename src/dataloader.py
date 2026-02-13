@@ -301,12 +301,13 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
 
             assert min_id >= 0, f"Negative token id: {min_id}"
             assert max_id < self.tokenizer.vocab_size, \
-                f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"    
+                f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"
+        print("Examples checked!")
         return super().torch_call(examples, *args, **kwargs)
     
     def context_augment(
             self,
-            examples: List[List[int]], 
+            examples: List[List[int]],
             max_seq_length: int = 128
         ) -> Dict[str, torch.Tensor]:
         # print("examples to contextualize:", examples)
@@ -336,14 +337,13 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
 
         current_chunk = [cls_token_id]
 
-        while all_sentences:
-            token = all_sentences.pop(0)
+        for token in all_sentences:
             assert isinstance(token, int), f"Non-integer token ID found: {token}, {type(token)}"
             if len(current_chunk) == 1 and token == sep_token_id:
                 continue
             current_chunk.append(token)
             if len(current_chunk) == max_seq_length:
-                chunks.append(current_chunk)
+                chunks.append({"input_ids": current_chunk})
                 current_chunk = [cls_token_id]
         
         # finalize last chunk
@@ -351,7 +351,7 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
             if len(current_chunk) < max_seq_length:
                 padding_len = max_seq_length - len(current_chunk)
                 current_chunk.extend([pad_token_id] * padding_len)
-            chunks.append(current_chunk)
+            chunks.append({"input_ids": current_chunk})
         
         # if no valid chunks created, return single padded chunk
         if len(chunks) == 0:
