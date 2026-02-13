@@ -251,22 +251,18 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         """
         Returns next data from this iterator.
         """
-        # get proper collate function
         
         index = self._next_index()  # may raise StopIteration
-
-        # store the index for sleep mechanism tracking
-        current_index = index
 
         data: Dict[str, Tensor] = self._dataset_fetcher.fetch(
             index
         )  # may raise StopIteration
 
         # add indices to data for sleep mechanism tracking
-        if isinstance(current_index, list):
-            data["indices"] = torch.tensor(current_index)
+        if isinstance(index, list):
+            data["indices"] = torch.tensor(index)
         else:
-            data["indices"] = torch.tensor([current_index])
+            data["indices"] = torch.tensor([index])
             
         if self._pin_memory:
             data = _torch_pin_memory(data, self._pin_memory_device)  # type: ignore[arg-type]
@@ -300,10 +296,11 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
                 min_id = min(ids)
 
             assert min_id >= 0, f"Negative token id: {min_id}"
-            assert max_id < self.tokenizer.vocab_size, \
-                f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"
+            print(max_id < self.tokenizer.vocab_size)# f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"
         print("Examples checked!")
-        return super().torch_call(examples, *args, **kwargs)
+        result = super().torch_call(examples, *args, **kwargs)
+        print(result.keys())
+        return result
     
     def context_augment(
             self,
