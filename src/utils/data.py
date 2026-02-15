@@ -39,11 +39,6 @@ def base_collate_fn(_samples: List[Dict[str, List[Tuple[int, float]]]]):
 
     for key, val in joined_batch.items():
         batch[key] = torch.stack(val)
-
-    # add mlm ids and labels
-    batch['labels'] = batch['input_ids'].clone()
-    batch['input_ids_mlm'] = batch['input_ids'].clone()
-    batch['labels_mlm'] = batch['labels'].clone()
     
     return batch
 

@@ -69,9 +69,12 @@ def main(cfg: BabyLMConfig):
     logger.info("Initializing model")
     model = load_base_model(cfg)
 
-    assert (
-        tokenizer.vocab_size == model.config.vocab_size
-    ), "Tokenizer and model vocab size mismatch"
+    if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
+        logger.info("Model and Tokenizer Mismatch - resizing model token embeddings")
+        model.resize_token_embeddings(len(tokenizer))
+    # assert (
+    #     tokenizer.vocab_size == model.config.vocab_size
+    # ), f"Tokenizer and model vocab size mismatch: {tokenizer.vocab_size}{model.config.vocab_size}"
 
     # Preprocess data
     logger.info("Preprocessing data")
@@ -143,6 +146,10 @@ def main(cfg: BabyLMConfig):
         max_training_steps = min(theoretical_max_steps, empirical_max_steps)
     else:
         max_training_steps = cfg.trainer.max_training_steps
+        
+    logging_steps = (max_training_steps 
+                     // (100 if cfg.experiment.dry_run else 1000))
+    logging_steps = logging_steps if logging_steps > 1 else max_training_steps
     training_args = TrainingArguments(
         output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
         # overwrite_output_dir=False,
@@ -161,10 +168,7 @@ def main(cfg: BabyLMConfig):
         // (
             2 if cfg.experiment.dry_run else 8
         ),  # checkpoint every 25% of training
-        logging_steps=max_training_steps
-        // (
-            100 if cfg.experiment.dry_run else 1000
-        ),  # log every 0.1% of training
+        logging_steps=logging_steps,
         run_name=cfg.experiment.name,
         report_to=["wandb"]
         if not cfg.experiment.offline_run
@@ -195,7 +199,13 @@ def main(cfg: BabyLMConfig):
         curriculum_learning_table=None,
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
-
+    # dl = trainer.get_train_dataloader()
+    # dl.sampler.switch_phase("SLEEP")
+    # batch = next(iter(dl))
+    # print(batch.keys())
+    # print("Masked input_ids:\n", batch["input_ids"])
+    # print("Labels:\n", batch["labels"])
+    # exit()
     if not cfg.experiment.resume_checkpoint_path:
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)

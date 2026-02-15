@@ -455,23 +455,12 @@ class CustomTrainer(Trainer):
 
         # check if using sleep mechanism w/ SleepSampler
         if self.sleep_mechanism_cfg and isinstance(train_sampler, SleepSampler):
-
-            # create collate function
-            def collate_fn(batch):
-                if train_sampler.phase == "SLEEP" and train_sampler.contextualize_sleep:
-                    return context_augmented_collate(batch,
-                                                     max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
-                                                     pad_token_id=self.tokenizer.pad_token_id,
-                                                     cls_token_id=self.tokenizer.cls_token_id,
-                                                     sep_token_id=self.tokenizer.sep_token_id)
-                else:
-                    return base_collate_fn(batch)
-                
             return SleepDataLoader(
                 dataset=train_dataset,
                 sampler=train_sampler,
+                tokenizer=self.tokenizer,
+                config=self.objective_curriculum_cfg,
                 batch_size=self._train_batch_size,
-                collate_fn=collate_fn,
                 drop_last=self.args.dataloader_drop_last,
                 num_workers=0,
                 pin_memory=self.args.dataloader_pin_memory,
@@ -552,6 +541,7 @@ class CustomTrainer(Trainer):
                 unit_loss, per_sample_losses = unit.compute_loss(
                     model, inputs, return_per_sample_loss=True
                 )
+                # print("Computed per-sample loss")
                 # logger.info(f"inputs: {inputs}")
                 # Add per-sample losses to the replay buffer
                 if "indices" in inputs:

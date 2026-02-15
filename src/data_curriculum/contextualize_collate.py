@@ -57,15 +57,11 @@ def context_augmented_collate(
     input_ids_tensor = torch.tensor(chunks, dtype=torch.long)
     # create attention mask (1 for real tok, 0 for pad)
     attention_mask = (input_ids_tensor != pad_token_id).long()
-    # create labels for MLM (copy/clone of input_ids)
-    labels = input_ids_tensor.clone()
 
     # create result dict
     result = {
         "input_ids": input_ids_tensor,
-        "attention_mask": attention_mask,
-        "input_ids_mlm": input_ids_tensor.clone(),
-        "labels_mlm": labels,
+        "attention_mask": attention_mask
     }
 
     return result

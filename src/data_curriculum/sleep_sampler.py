@@ -79,17 +79,17 @@ class SleepSampler(Sampler):
         while True:
             if self.phase == "WAKE":
                 for i in self.folds[self.curr_fold]:
+                    assert i < len(self.dataset), f"Index {i} out of range of dataset"
                     yield i
             # If sleep phase:
             elif self.phase == "SLEEP":
                 # use contextualized chunks if available, otherwise use replay buffer
                 indices_to_sample = (
-                    self.contextualized_chunks 
-                    if self.contextualize_sleep and self.contextualized_chunks 
-                    else self.replay_buffer
+                    self.contextualized_chunks if self.contextualize_sleep and self.contextualized_chunks else self.replay_buffer
                 )
 
                 for i in indices_to_sample:
+                    assert i < len(self.dataset), f"Index {i} out of range of dataset"
                     yield i
             
 
@@ -132,6 +132,7 @@ class SleepSampler(Sampler):
                 if self.contextualize_sleep:
                     self.contextualized_chunks = self.contextualize_buffer()
             else:
+                raise ValueError("Replay Buffer is Empty")
                 self.replay_buffer = []
 
         elif new_phase == "WAKE":
