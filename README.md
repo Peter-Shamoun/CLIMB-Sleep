@@ -1,21 +1,43 @@
-![cover-banner](./misc/cover.png)
-# CLIMB - Curriculum Learning for Infant-inspired Model Building
+![cover-banner](./misc/sleep_mechanism_diagram.png)
+# Sleep-Consolidated lerning and Plasticity Decay
 
-Cambridge University & Collaborator's submission to the [Baby LM Challenge](https://babylm.github.io/) (strict track). The Baby LM challenge requires teams to train language models on the same amount of data that a child might plausibly see (on the order of 10 million words). 
+Language Models (LMs), while powerful, are extremely resource-intensive to train. 
+Effective LMs require hundreds of times more data to build an understanding of language than human children, often more text than a human will ever be exposed to in their entire lifetime. The resource requirements to build an effective language model from random initialization (also known as pre-training) restrict language model research to larger organizations with lots of funding, making academic research of LM pre-training difficult and costly.
 
-The accompanying paper to this codebase is titled: **Curriculum Learning for Infant-inspired Model Building**.
+Most neural language models are also trained on data over multiple epochs.
+This means that over the course of a training run, the model will see the same dataset anywhere from hundreds to thousands of times.
+This is entirely different from how humans acquire language: we live through every day once, and experience everything only once.
+In addition to not being cognitively plausible, epoch training also potentially wastes computational resources.
+Different samples of the data will have different difficulty levels that determine how easily the model can learn their patterns.
+Epoch training means that even after the model has mastered easier samples, it is still re-trained on those same samples in the same contexts as before, leading to overfitting and shortcut learning, where the model picks up on spurious relationships rather than learning real semantic content.
+This disconnect between the training schedules of LMs and human language acquisition not only could contribute to their inefficiency, but also means that there are strong limitations in the use and interpretation of LMs as cognitive models.
 
-In our submission to the Baby LM challenge, we explore different curriculum learning methods that simulate how humans learn languages. In particular, we define three different types of curriculum learning (vocab curriculum learning, data curriculum learning and objective curriculum learning) that each tweek a central aspect of the machine learning pipeline: the data processing, the data sampling and the objective function. The results of our experiments are summarized in our paper. 
+Humans, however, do revisit experiences in a critical stage for cognitive development: sleep.
+Neuroscience research has shown that sleep is not just a period of rest, but critical for developing memories.
+While the waking brain is optimized for encoding new experiences into memory, during sleep, the brain undergoes a process called *memory consolidation*, where they are stabilized and integrated into pre-existing synaptic networks.
+This two-stage process for memory formation assumes that, because long-term memory stores take longer to train and short-term memory is easily overwritten by new experiences, sleep provides an essential off-line environment, where recent experiences are revisited repeatedly to gradually integrate into long-term stores without overwriting older memories.
+By consolidating abstract representations of our memories in sleeping periods, humans also retain world knowledge and episodic memory of recent events (declarative memory) as well as intuition and unconscious long-term memories that influence their behavior (non-declarative memory), both of which are important for learning complex skills such as language.
+
+It is clear that sleep is a process of utmost importance for cognitive development, and contributes to how humans are able to quickly encode and retain information from recent experiences without truly experiencing them more than once. In this project, we will explore sleep-inspired, cognitively-plausible training schedules for language models in the hopes of producing data-efficient training paradigms that diverge from standard multi-epoch conventions.
 
 ## Setup 
 
-To get setup create a hugging face account and ask @rdiehlmartinez to add you to the group's private hugging face hub. The hub is where we keep data, tokenization, model and other artifacts. During training, we pull in these values directly from the hub (and occasionally also push progamatically to the hub). 
+To set up your environment, you should run the following commands:
 
-In order to interact with the hub, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names HF_READ_TOKEN, and HF_WRITE_TOKEN in a file called `.env`.
+```
+pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
+pip install hydra-core
+pip install wandb
+pip install -r requirements.txt
+```
+This will install the necessary libraries to run our code. Be sure to install the correct torch distribution for your CUDA version.
 
-You will also need to ask @rdiehlmartinez to add you to the wandb (weights and biases) baby-lm project. We use wandb to log out metrics generated by our runs. Once you've joined the group, you will need to go to wandb to retrieve your [API key](https://wandb.ai/authorize). You will be prompted for this key calling the `./setup.sh` (see below).
+In order to interact with the hub, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names HF_READ_TOKEN and HF_WRITE_TOKEN.
 
-Before running the code, make sure to run the setup script `./setup.sh`. This script sets up the requirements imports as well as git hooks for automatic code formatting. Additionally, this script makes sure you are logged into wandb and huggingface.
+Additionally, make sure you are logged in to wandb with your wandb API token:
+```
+wandb login --relogin <YOUR TOKEN HERE>
+```
 
 ## Overview 
 
@@ -28,39 +50,13 @@ Under `/src/config.py` you will find the general structure of the hydra config f
 
 We run automatic type-checking on all the passed in config files, and also check that there are no missing required parameters of the config file. If there are, we raise an error.
 
-The `/conf` directory stores all the default configs and subconfigs. The entry point to the default config we use is `conf/config.yaml`. Taking a look at the `conf` directory, you will notice that each sub-directory of `conf` (i.e. `conf/data_curriculum`) stores a sub-configuration. One feature that stands out is that we separate three types of curriculum learning sub-configurations (one for `vocab_curriculum`, one for `data_curriculum`, and one for `objective_curriculum`) -  The first establishes strategies for dynamically masking out vocabulary units over the course of training. The second enables dynamically sampling the training data according to some difficulty function which is updated throughout training. The third method provides functionality for changing the objective function at specified, discrete training steps.
-
-
-#### Specifying either a vocab- or data-driven curriculum learning strategy 
-In order to specify either a vocab- or a data-driven training curriculum, you must set a `pacing_fn` as well as `pacing_fn_kwargs`. The pacing function is one of `['linear', 'quad', 'root', 'step', 'exp', 'log']` or `None`. This function controls the rate at which the training loop will - depending on the type of curriculum - increase either the amount of vocab units unmasked (in the case of vocab curriculum learning) or the data difficulty that is sampled at each training step (in the case of data curriculum learning). The keyword arguments passed in the dictionary `pacing_fn_kwargs` control (1) `start_percent`: the percentage of the dataset which is seen until the curriculum learning protocol is actigvated (2) `num_steps`: the number of steps over which the pacing function will be active, thus defining the curriculum learning region, and (3) `end_percent`: the percentage of the `num_steps` at which to stop curriculum learning.
-
-When using a vocab curriculum learning, users must additionally specify the name of the vocab curriculum, `vocab_curriculum_name`. 
-
-When using a data curriculum learning, users must additionally specify the name of the difficulty scorer, `difficulty_scorer_name`. The difficulty scorer function should be the name of a feature in your dataset by which you want to order your data. By default, the Trainer will sort data in an ascending fashion, i.e. in increasing difficulty w.r.t this feature. This could be n_gram_perplexity, sentence_length, etc. You can also specify additional kwargs, `difficulty_scorer_kwargs`, that should be passed to the scoring function.
-
-
-#### Specifying an objective-driven curriculum learning strategy 
-Specifying an objective-driven curriculum is slightly more involved than specifying either a vocab- or data-driven curriculum. For objective-driven curricula you need to first specify a general strategy, by creating a new `<strategy_name>.yaml` in the `conf/objective_curriculum` directory. This strategy stores information relating to what objectives will be used over the course of training and when to switch the training objective. Each training objective - what we call objective units - that you plan to use over the course of training also needs to be specified. These could be "mlm", "pos", or other custom objectives specified by config files in the `curriculum/units` dir. The strategy config is where you define a dictionary `steps`, which maps integer training step spans over which each objective unit is active. 
+The `/conf` directory stores all the default configs and subconfigs. The entry point to the default config we use is `conf/config.yaml`. Taking a look at the `conf` directory, you will notice that each sub-directory of `conf` (i.e. `conf/data_curriculum`) stores a sub-configuration. For sleep mechanism configurations, see the `conf/sleep_mechanism` folder. There, you'll find a default config and a minimal testing config for the sleep mechanism. Choose between which of these files to use in the `conf/config.yaml` file, as the `sleep_mechanism` argument under `defaults`.
 
 ### DataLoading 
 
-We define a CustomDataLoader in `/src/dataloader.py` that subclasses the normal hugging face Dataloader class. In the CustomDataLoader, unlike in the normal DataLoader, we are able to keep track of the global step number of training (i.e. how many batches of training data have already been trained on). This information is useful because it allows us to configure special behavior of the DataLoader for different parts of training -- this is key for implementing the vocab-, data-, and objective- curricula. 
+We define a custom SleepDataLoader in `/src/dataloader.py` that subclasses the normal hugging face Dataloader class. In the SleepDataLoader, unlike in the normal DataLoader, we are able to keep track of the global step number of training (i.e. how many batches of training data have already been trained on) and indices of the data we train on. This information is useful because it allows us to configure special behavior of the Trainer for different parts of training -- this is key for the functionality of the sleep data sampling. We also implement context-augmented padding within the dataloader.
 
- In particular, when the CustomDataLoader goes to yield a next batch of data, we enable the DataLoader to check whether at the current step it should apply a different collator function to preprocess the data for a given (perhaps new) objective function. 
-
-Thus, the CustomDataLoader is where the main logic for objective-driven curricula is implemented.  
-
-### Vocab Curriculum Learning 
-
-All classes associated with vocab curriculum learning are organized under `/src/vocabulary_curriculum`. The main idea behind our curriculum learning approach is to implement a mapping function that at a given step can take the output of the data loader and map certain vocab units to `unk`. The vocab curriculum learning also relies on a pacing function to determine the amount of vocab units that should be masked. This is all supported by the fact that the data loader has access to the current global training step. 
-
-### Data Curriculum Learning -- DataSampling 
-
-All classes associated with data curriculum learning are organized under `/src/data_curriculum`. The data curriculum is powered by our custom CurriculumSampler. As is standard, when we initialize the CustomDataLoader we pass it an instance of the CurriculumSampler. Just like the CustomDataLoader has access to a global step so to the CurriculumSampler stores the current global step of training, in order to adapt its sampling behavior conditioned on the current training step. The CurriculumSampler uses this information in order to determine if it should sample the indices for the next batch of samples from a smaller subsample of the total dataset. The purpose for this is so that the CurriculumSampler is forced to sample early in training easier, easier training samples (and over the course of training progressively ramp up the difficulty of the samples). The CurriculumSampler has access to a pacing function (`pacing_fn`) that it uses to determine the overall maximal difficulty of samples that it can draw at any given global step number.
-
-### The Objective Function 
-
-We define anything to do with the objective function currently inside of the `src/objective_curriculum` module. The objective curriculum is organized around an orchestrator class `ObjectiveCurriculum` that - just like the data loader - maintains the current global step and uses that information to determine which objective units should be activated. The `ObjectiveCurriculum`, when queried, can then return individual objective units which are implemented under `src/objective_curriculum/units`. Each unit stores its own weights associated with the task head for the objective it implements, as well as an optimizer and scheduler. During training when data is fed through the model we first compute the hidden state of the model for a given batch of data and then pass those hidden states on to each of the task units. 
+We also implement the SleepSampler, in `/src/data_curriculum/sleep_sampler.py`. This subclasses the PyTorch Sampler, and implements much of the sleep functionality, including switching between phases, limiting access to specific folds of the data, and maintaining a replay buffer.
 
 ### Preprocessing and Tokenization
 
@@ -68,7 +64,7 @@ Other useful methods for data preprocessing, tokenizer and inference can be foun
 
 ### Evaluation
 
-The evaluation of the model on GLUE and BLIMP tasks is done by calling on third-party libraries that are part of the submodules of this project.
+TODO
 
 ### Model Architecture 
 
