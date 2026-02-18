@@ -33,6 +33,7 @@ trainer:
   num_warmup_steps: 100_000
   max_training_steps: 400_000
   eval_blimp: False
+  eval_fast: True
   eval_glue: False
   eval_msgs: False
   eval_perplexity: True

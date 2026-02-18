@@ -52,21 +52,15 @@ class BlimpEvaluator(object):
 
         # Start a subprocess to run the lib/evaluation-pipeline/babylm_eval.py script
         logger.info("Running BLIMP and AOA evaluation script...")
-        # cmd = (
-        #     "cd lib/evaluation-pipeline; ../../env/bin/python babylm_eval.py ../../"
-        #     + self.out_dir
-        #     + ' "encoder"'
-        #     + f" --device {self.device}"
-        #     + f" --process_index {self.process_index}"
-        #     + f" --world_size {self.world_size}"
-        #     + (" --dry_run True" if self.dry_run else "")
-        #     + " --run_aoa"
-        # )
         cmd = (
-            "cd lib/evaluation-pipeline; "
-            + "./eval_zero_shot_fast.sh "
+            "cd lib/evaluation-pipeline; ../../env/bin/python babylm_eval.py ../../"
             + self.out_dir
-            + " None mlm " # revision and architecture
+            + ' "encoder"'
+            + f" --device {self.device}"
+            + f" --process_index {self.process_index}"
+            + f" --world_size {self.world_size}"
+            + (" --dry_run True" if self.dry_run else "")
+            + " --run_aoa"
         )
         subprocess.run(cmd, shell=True)
 
@@ -108,6 +102,79 @@ class BlimpEvaluator(object):
 
         return accuracies
 
+class BabyLMEvaluator(object):
+    def __init__(
+        self,
+        out_dir: str,
+        device: torch.device,
+        process_index: int,
+        world_size: int,
+        dry_run: bool = False,
+        keep_predictions: bool = False,
+    ):
+        """
+        Args:
+            * out_dir (str): Path to the output directory
+            * device (torch.device): Device to run the evaluation on
+            * process_index (int): Index of the current process
+            * world_size (int): Number of processes
+            * dry_run (bool): If True, don't actually run the evaluation script
+            * keep_predictions (bool): If True, keep the predictions from BLIMP
+        """
+
+        self.out_dir = out_dir
+        self.device = device
+        self.process_index = process_index
+        self.world_size = world_size
+        self.dry_run = dry_run
+        self.keep_predictions = keep_predictions
+
+    def __call__(self) -> Union[Dict[str, Any], None]:
+        """
+        Runs the BabyLM fast evaluation pipeline.
+        """
+
+        # Start a subprocess to run the lib/evaluation-pipeline/babylm_eval.py script
+        logger.info("Running BabyLM fast evaluation script...")
+        cmd = (
+            "cd lib/evaluation-pipeline; "
+            + "./eval_zero_shot_fast.sh "
+            + self.out_dir
+            + f" {self.out_dir} mlm" # revision and architecture
+        )
+        subprocess.run(cmd, shell=True)
+
+        if self.world_size > 1:
+            dist.barrier()
+
+        # Iterate through all directories in out_dir/zeroshot
+        # and get the accuracies from the eval_results.json files
+        logger.info("BLIMP and AOA Evaluation script finished. Getting accuracies...")
+        accuracies = {}
+        eval_results_dir = os.path.join(self.out_dir, "zero_shot/mlm")
+        for task in os.listdir(eval_results_dir):
+            for subtask in os.listdir(os.path.join(eval_results_dir, task)):
+                with open(os.path.join(
+                    eval_results_dir, task, subtask, "best_temperature_report.txt"
+                ), 'r') as f:
+                    for line in f.readlines():
+                        if ":" not in line:
+                            continue
+                        metric, value = line.split(":")
+                        accuracies[f"babylm_{metric}"] = value
+
+        accuracies["babylm_avg"] = sum(accuracies.values()) / len(accuracies)
+            
+        if self.world_size > 1:
+            # Make sure all processes have finished before removing zeroshot directory
+            dist.barrier()
+
+        # Delete the zeroshot directory; ensure that only one process does this
+        if self.process_index == 0 and not self.keep_predictions:
+            shutil.rmtree(os.path.join(self.out_dir, "zeroshot"))
+            shutil.rmtree(os.path.join(self.out_dir, "aoa_prediction"))
+
+        return accuracies
 
 class FinetuneEvaluator(object):
 

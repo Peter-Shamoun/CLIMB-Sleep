@@ -149,6 +149,7 @@ class CustomTrainer(Trainer):
         self.experiment_group = hydra_config.experiment.group
         self.experiment_name = hydra_config.experiment.name
         self.eval_blimp = hydra_config.trainer.eval_blimp
+        self.eval_fast = hydra_config.trainer.eval_fast
         self.eval_glue = hydra_config.trainer.eval_glue
         self.eval_msgs = hydra_config.trainer.eval_msgs
         self.eval_perplexity = hydra_config.trainer.eval_perplexity
@@ -725,6 +726,21 @@ class CustomTrainer(Trainer):
         if self.eval_blimp:
             logging.info("Evaluating on BLIMP and AOA...")
             blimp_evaluator = BlimpEvaluator(
+                inference_model_dir,
+                device=self.args.device,
+                process_index=self.args.process_index,  # world (global) process index
+                world_size=self.args.world_size,
+                dry_run=self.dry_run,
+                keep_predictions=is_best_run,
+            )
+            # Get average of blimp metrics
+            blimp_metrics = blimp_evaluator()
+            evaluator_metrics.update(blimp_metrics)  # type: ignore
+            
+        # BabyLM fast eval
+        if self.eval_fast:
+            logging.info("Evaluating on BabyLM Fast Evaluation...")
+            blimp_evaluator = BabyLMEvaluator(
                 inference_model_dir,
                 device=self.args.device,
                 process_index=self.args.process_index,  # world (global) process index
