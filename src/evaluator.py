@@ -52,15 +52,22 @@ class BlimpEvaluator(object):
 
         # Start a subprocess to run the lib/evaluation-pipeline/babylm_eval.py script
         logger.info("Running BLIMP and AOA evaluation script...")
+        # cmd = (
+        #     "cd lib/evaluation-pipeline; ../../env/bin/python babylm_eval.py ../../"
+        #     + self.out_dir
+        #     + ' "encoder"'
+        #     + f" --device {self.device}"
+        #     + f" --process_index {self.process_index}"
+        #     + f" --world_size {self.world_size}"
+        #     + (" --dry_run True" if self.dry_run else "")
+        #     + " --run_aoa"
+        # )
         cmd = (
-            "cd lib/evaluation-pipeline; ../../env/bin/python babylm_eval.py ../../"
+            "cd lib/evaluation-pipeline; "
+            + "./eval_zero_shot_fast.sh "
             + self.out_dir
-            + ' "encoder"'
-            + f" --device {self.device}"
-            + f" --process_index {self.process_index}"
-            + f" --world_size {self.world_size}"
-            + (" --dry_run True" if self.dry_run else "")
-            + " --run_aoa"
+            + " None mlm " # revision and architecture
+            + 
         )
         subprocess.run(cmd, shell=True)
 
