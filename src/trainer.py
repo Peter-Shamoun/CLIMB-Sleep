@@ -740,7 +740,7 @@ class CustomTrainer(Trainer):
         # BabyLM fast eval
         if self.eval_fast:
             logging.info("Evaluating on BabyLM Fast Evaluation...")
-            blimp_evaluator = BabyLMEvaluator(
+            babylm_evaluator = BabyLMEvaluator(
                 inference_model_dir,
                 device=self.args.device,
                 process_index=self.args.process_index,  # world (global) process index
@@ -749,8 +749,8 @@ class CustomTrainer(Trainer):
                 keep_predictions=is_best_run,
             )
             # Get average of blimp metrics
-            blimp_metrics = blimp_evaluator()
-            evaluator_metrics.update(blimp_metrics)  # type: ignore
+            babylm_metrics = babylm_evaluator()
+            evaluator_metrics.update(babylm_metrics)  # type: ignore
 
         if self.eval_glue or self.eval_msgs:
             logging.info("Evaluating on finetuning tasks...")

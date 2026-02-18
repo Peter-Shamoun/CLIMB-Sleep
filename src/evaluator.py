@@ -174,8 +174,8 @@ class BabyLMEvaluator(object):
 
         # Delete the zeroshot directory; ensure that only one process does this
         if self.process_index == 0 and not self.keep_predictions:
-            shutil.rmtree(os.path.join(self.out_dir, "zeroshot"))
-            shutil.rmtree(os.path.join(self.out_dir, "aoa_prediction"))
+            shutil.rmtree(os.path.join(self.out_dir, "zero_shot"))
+            # shutil.rmtree(os.path.join(self.out_dir, "aoa_prediction"))
 
         return accuracies
 
