@@ -153,9 +153,13 @@ class BabyLMEvaluator(object):
         eval_results_dir = os.path.join(self.out_dir, "zero_shot/mlm")
         for task in os.listdir(eval_results_dir):
             for subtask in os.listdir(os.path.join(eval_results_dir, task)):
-                with open(os.path.join(
+                results_filepath = os.path.join(
                     eval_results_dir, task, subtask, "best_temperature_report.txt"
-                ), 'r') as f:
+                )
+                if not results_filepath.exists():
+                    print(f"Skip {results_filepath}")
+                    continue
+                with open(results_filepath, 'r') as f:
                     for line in f.readlines():
                         if ":" not in line:
                             continue

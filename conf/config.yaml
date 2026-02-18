@@ -19,7 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "default-run"
+  name: "babylm_fasteval_tests"
   output_dir: "/mnt/data"
 
 data_preprocessing:
