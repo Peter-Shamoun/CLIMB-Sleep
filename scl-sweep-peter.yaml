@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scl-sweep-peter
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: init-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R root:users /mnt/data && chmod -R 2775 /mnt/data"]
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+
+      containers:
+      - name: gpu-container
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        env:
+        - name: HF_READ_TOKEN
+          value: "<YOUR_HF_TOKEN>"
+        - name: HF_WRITE_TOKEN
+          value: "<YOUR_HF_TOKEN>"
+        - name: HUGGINGFACE_HUB_TOKEN
+          value: "<YOUR_HF_TOKEN>"
+        - name: WANDB_API_KEY
+          value: "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"
+        command: ["/bin/bash", "-c"]
+        args: [
+          "echo 'Pod started with PyTorch + CUDA' &&\
+          apt update &&\
+          apt install git -y &&\
+          apt install unzip -y &&\
+          git clone https://github.com/Peter-Shamoun/CLIMB-Sleep.git &&\
+          cd CLIMB-Sleep &&\
+          pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126 &&\
+          pip install hydra-core &&\
+          pip install wandb &&\
+          pip install -r requirements.txt &&\
+          echo 'Finished setup!' &&\
+          python run_sweep_peter.py &&\
+          echo 'Finished Sweep!'"
+        ]
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: "32G"
+            cpu: "4"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: "32G"
+            cpu: "4"
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.product
+                operator: In
+                values:
+                - NVIDIA-GeForce-RTX-4090
+
+      restartPolicy: Never
+
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: scl-pvc-2
