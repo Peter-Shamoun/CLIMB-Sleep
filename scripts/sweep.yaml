@@ -1,5 +1,6 @@
 program: train.py
 name: scl-sweep
+project: sleep-consolidated-learning
 method: bayes
 metric:
   goal: minimize
