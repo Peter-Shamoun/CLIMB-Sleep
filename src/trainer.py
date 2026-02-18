@@ -64,7 +64,7 @@ from .data_curriculum.pacing_fn import get_pacing_fn
 from .dataloader import CurriculumDataLoader, SleepDataLoader
 
 # Model Evaluation
-from .evaluator import BlimpEvaluator, FinetuneEvaluator
+from .evaluator import BlimpEvaluator, FinetuneEvaluator, BabyLMEvaluator
 
 # Objective Curriculum
 from .objective_curriculum import ObjectiveCurriculum

@@ -137,8 +137,7 @@ class BabyLMEvaluator(object):
         # Start a subprocess to run the lib/evaluation-pipeline/babylm_eval.py script
         logger.info("Running BabyLM fast evaluation script...")
         cmd = (
-            "cd lib/evaluation-pipeline; "
-            + "./eval_zero_shot_fast.sh "
+            "lib/evaluation-pipeline/eval_zero_shot_fast.sh "
             + self.out_dir
             + f" {self.out_dir} mlm" # revision and architecture
         )
