@@ -1,5 +1,5 @@
 program: train.py
-name: scl-sweep
+name: scl-sweep-peter
 method: bayes
 metric:
   goal: minimize
@@ -15,7 +15,6 @@ parameters:
   trainer.num_warmup_steps:
     values: [10000, 50000, 100000]
   sleep_mechanism.replay_ratio:
-    # range: [0.1, 0.7] # not supported by W&B
     distribution: uniform
     min: 0.1
     max: 0.7
@@ -31,3 +30,4 @@ command:
   - python
   - ${program}
   - ${args_no_hyphens}
+  - experiment.name=peter-sweep-run
