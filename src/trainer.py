@@ -577,12 +577,7 @@ class CustomTrainer(Trainer):
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
         return total_loss
     def training_step(self, model, inputs, num_items_in_batch=None):
-        if num_items_in_batch is not None:
-            loss = super().training_step(model, inputs, num_items_in_batch)
-        else:
-            loss = super().training_step(model, inputs)
-        
-        loss = super().training_step(model, inputs, num_items_in_batch)
+        loss = super().training_step(model, inputs)
 
         # == SLEEP MECHANISM == #
         if self.sleep_mechanism_cfg:
