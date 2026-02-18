@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 # Model Training
 from transformers import PreTrainedTokenizerFast, Trainer, TrainerCallback
+from transformers.utils import is_torch_neuroncore_available
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
 from transformers.trainer_callback import TrainerControl, TrainerState
 from transformers.trainer_utils import (
