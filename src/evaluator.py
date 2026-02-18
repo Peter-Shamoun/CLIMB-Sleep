@@ -156,7 +156,7 @@ class BabyLMEvaluator(object):
                 results_filepath = os.path.join(
                     eval_results_dir, task, subtask, "best_temperature_report.txt"
                 )
-                if not results_filepath.exists():
+                if not os.path.exists(results_filepath):
                     print(f"Skip {results_filepath}")
                     continue
                 with open(results_filepath, 'r') as f:
