@@ -24,7 +24,7 @@ spec:
         - name: HUGGINGFACE_HUB_TOKEN
           value: "<YOUR_HF_TOKEN>"
         - name: WANDB_API_KEY
-          value: "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"
+          value: "<YOUR_WANDB_API_KEY>"
         command: ["/bin/bash", "-c"]
         args: [
           "echo 'Pod started with PyTorch + CUDA' &&\
