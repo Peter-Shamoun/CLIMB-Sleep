@@ -67,7 +67,6 @@ class BlimpEvaluator(object):
             + "./eval_zero_shot_fast.sh "
             + self.out_dir
             + " None mlm " # revision and architecture
-            + 
         )
         subprocess.run(cmd, shell=True)
 
