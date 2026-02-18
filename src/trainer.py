@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 # Model Training
 from transformers import PreTrainedTokenizerFast, Trainer, TrainerCallback
+from transformers.utils import is_torch_neuroncore_available
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
 from transformers.trainer_callback import TrainerControl, TrainerState
 from transformers.trainer_utils import (
@@ -576,9 +577,8 @@ class CustomTrainer(Trainer):
 
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
         return total_loss
-    def training_step(self, model, inputs, num_items_in_batch):
-        
-        loss = super().training_step(model, inputs, num_items_in_batch)
+    def training_step(self, model, inputs, num_items_in_batch=None):
+        loss = super().training_step(model, inputs)
 
         # == SLEEP MECHANISM == #
         if self.sleep_mechanism_cfg:
