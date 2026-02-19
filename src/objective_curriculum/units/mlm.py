@@ -23,7 +23,7 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         super().__init__(*args, **kwargs)
         self.unmask_probability = unmask_probability
 
-    def torch_call(self, *args):
+    def torch_call(self, examples, *args):
         """
         Prepares data for the masked language modeling task.
 
@@ -34,7 +34,9 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
             pos_tags
         }
         """
-        batch: Dict[str, Any] = super().torch_call(*args)
+        for ex in examples:
+            ex.pop("offset_mapping", None)
+        batch: Dict[str, Any] = super().torch_call(examples, *args)
         assert "labels" in batch
 
         batch["input_ids_mlm"] = batch["input_ids"]
