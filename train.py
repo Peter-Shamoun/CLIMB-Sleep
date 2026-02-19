@@ -134,7 +134,7 @@ def main(cfg: BabyLMConfig):
     # of other experiments, and also so that we can store checkpoints of that run on HF hub;
     # alternatively maybe we use ray tune which is natively supported by Trainer
     if cfg.sleep_mechanism:
-        theoretical_max_steps = int((cfg.sleep_mechanism.wake_block_steps 
+        theoretical_max_steps = int((cfg.sleep_mechanism.wake_tblock_steps 
                                 + cfg.sleep_mechanism.sleep_max_steps) 
                                 * cfg.sleep_mechanism.n_phases)
         empirical_max_steps = int((len(train_dataset) 

@@ -2,7 +2,7 @@
 # To use: add "- sleep_mechanism: default" to defaults in config.yaml
 # Or override individual values via command line
 
-wake_block_steps: 1000
+wake_block_steps: 9999999 # 1000
 sleep_max_steps: 10000
 sleep_loss_threshold: 0.5
 replay_ratio: 0.3
