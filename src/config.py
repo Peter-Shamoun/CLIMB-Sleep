@@ -79,6 +79,7 @@ class TrainerParams(DictConfig):
     num_warmup_steps: int
     max_training_steps: int
     eval_blimp: bool
+    eval_fast: bool
     eval_glue: bool
     eval_msgs: bool
     eval_perplexity: bool

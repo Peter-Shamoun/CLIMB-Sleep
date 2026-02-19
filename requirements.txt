@@ -128,6 +128,7 @@ rfc3986-validator==0.1.1
 rfc3987-syntax==1.1.0
 rpds-py==0.30.0
 safetensors==0.7.0
+scipy==1.15.2
 Send2Trash==2.1.0
 sentry-sdk==2.51.0
 setuptools==70.2.0
@@ -136,6 +137,7 @@ six==1.17.0
 smmap==5.0.2
 soupsieve==2.8.3
 stack-data==0.6.3
+statsmodels==0.14.4
 sympy==1.14.0
 terminado==0.18.1
 tinycss2==1.4.0

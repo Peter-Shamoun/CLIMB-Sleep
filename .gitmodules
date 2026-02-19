@@ -1,7 +1,6 @@
 [submodule "lib/UnMasked"]
 	path = lib/UnMasked
 	url = https://github.com/phueb/UnMasked.git
-[submodule "lib/evaluation-pipeline"]
-	path = lib/evaluation-pipeline
-	url = https://github.com/codebyzeb/evaluation-pipeline.git
-	ignore = dirty
+[submodule "lib/evaluation-pipeline-2025"]
+	path = lib/evaluation-pipeline-2025
+	url = https://github.com/babylm/evaluation-pipeline-2025
