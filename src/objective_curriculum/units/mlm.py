@@ -23,7 +23,7 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         super().__init__(*args, **kwargs)
         self.unmask_probability = unmask_probability
 
-    def torch_call(self, *args):
+    def torch_call(self, examples, *args):
         """
         Prepares data for the masked language modeling task.
 
@@ -34,17 +34,20 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
             pos_tags
         }
         """
-        batch: Dict[str, Any] = super().torch_call(*args)
+        for ex in examples:
+            ex.pop("offset_mapping", None)
+        # print([ex.keys() for ex in examples])
+        batch: Dict[str, Any] = super().torch_call(examples, *args)
         assert "labels" in batch
 
         batch["input_ids_mlm"] = batch["input_ids"]
         batch["labels_mlm"] = batch["labels"]
-        del batch["labels"]  # each task has its own labels
-        del batch["input_ids"]  # each task has its own input_ids
+        # del batch["labels"]  # each task has its own labels
+        # del batch["input_ids"]  # each task has its own input_ids
         return batch
 
     # We override this function to allow us to adjust the probability of unmasking
-    def torch_mask_tokens(self, inputs: Any, special_tokens_mask=None):
+    def torch_mask_tokens(self, inputs: Any, special_tokens_mask=None, **kwargs):
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """

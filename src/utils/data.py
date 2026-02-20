@@ -92,7 +92,7 @@ class DatasetPreprocessor(object):
             "input_ids": [],
             "special_tokens_mask": [],
             "attention_mask": [],
-            "pos_tags": [],
+            # "pos_tags": [],
             "filename": [],
         }
 
@@ -100,7 +100,7 @@ class DatasetPreprocessor(object):
             "input_ids": [],
             "special_tokens_mask": [],
             "attention_mask": [],
-            "pos_tags": [],
+            # "pos_tags": [],
             "filename": [],
         }
 
@@ -120,41 +120,41 @@ class DatasetPreprocessor(object):
                 else None,
                 truncation=False,
                 return_special_tokens_mask=True,
-                return_offsets_mapping=True,
+                return_offsets_mapping=False,
             )
 
             # Original dataset doesn't have pos tags
-            if "original" in self.dataset_subconfig:
-                pos_tags = [POS_TAG_MAP["X"]] * len(
-                    tokenized_inputs["input_ids"]
-                )
-            else:
-                subwords = [text[offset[0] : offset[1]] for offset in tokenized_inputs["offset_mapping"]]  # type: ignore
-                tag_pairs = [
-                    tag_pair.split("__<label>__")
-                    for tag_pair in tagged_text.strip().split(" ")
-                    if tag_pair != ""
-                ]
-                # Iterate through subwords and assign POS tags, hopefully they should match up, since
-                # the subwords in example_tagged_text were extracted by the tokenizer in the first place
-                pos_tags = []
-                i = 0
-                for subword in subwords:
-                    # This indicates that the subword is a special token
-                    if subword == "" or subword == "\n":
-                        pos_tags.append(POS_TAG_MAP["X"])
-                        continue
-                    # Check if we're at the start of the next word
-                    if i + 1 < len(tag_pairs) and tag_pairs[i + 1][
-                        0
-                    ].startswith(subword):
-                        i += 1
-                    # Keep using the POS tag of the current word
-                    pos_tags.append(
-                        POS_TAG_MAP[tag_pairs[i][1]]
-                        if tag_pairs[i][1] in POS_TAG_MAP
-                        else POS_TAG_MAP["X"]
-                    )
+            # if "original" in self.dataset_subconfig:
+            #     pos_tags = [POS_TAG_MAP["X"]] * len(
+            #         tokenized_inputs["input_ids"]
+            #     )
+            # else:
+            #     subwords = [text[offset[0] : offset[1]] for offset in tokenized_inputs["offset_mapping"]]  # type: ignore
+            #     tag_pairs = [
+            #         tag_pair.split("__<label>__")
+            #         for tag_pair in tagged_text.strip().split(" ")
+            #         if tag_pair != ""
+            #     ]
+            #     # Iterate through subwords and assign POS tags, hopefully they should match up, since
+            #     # the subwords in example_tagged_text were extracted by the tokenizer in the first place
+            #     pos_tags = []
+            #     i = 0
+            #     for subword in subwords:
+            #         # This indicates that the subword is a special token
+            #         if subword == "" or subword == "\n":
+            #             pos_tags.append(POS_TAG_MAP["X"])
+            #             continue
+            #         # Check if we're at the start of the next word
+            #         if i + 1 < len(tag_pairs) and tag_pairs[i + 1][
+            #             0
+            #         ].startswith(subword):
+            #             i += 1
+            #         # Keep using the POS tag of the current word
+            #         pos_tags.append(
+            #             POS_TAG_MAP[tag_pairs[i][1]]
+            #             if tag_pairs[i][1] in POS_TAG_MAP
+            #             else POS_TAG_MAP["X"]
+            #         )
 
             if self.join_sentences:
                 full_tokenized_inputs["input_ids"].extend(
@@ -166,7 +166,7 @@ class DatasetPreprocessor(object):
                 full_tokenized_inputs["attention_mask"].extend(
                     tokenized_inputs["attention_mask"]
                 )
-                full_tokenized_inputs["pos_tags"].extend(pos_tags)
+                # full_tokenized_inputs["pos_tags"].extend(pos_tags)
                 full_tokenized_inputs["filename"].extend(
                     [filename] * len(tokenized_inputs["input_ids"])
                 )
@@ -196,16 +196,16 @@ class DatasetPreprocessor(object):
                     batch["attention_mask"].append(
                         tokenized_inputs["attention_mask"][i : i + self.max_input_length]  # type: ignore
                     )
-                    batch["pos_tags"].append(
-                        pos_tags[i : i + self.max_input_length]
-                    )
+                    # batch["pos_tags"].append(
+                    #     pos_tags[i : i + self.max_input_length]
+                    # )
                     batch["filename"].append(filename)
                 # Need to do extra padding for pos tags because the tokenizer padding doesn't work on them
-                if len(batch["pos_tags"][-1]) < self.max_input_length:
-                    batch["pos_tags"][-1].extend(
-                        [POS_TAG_MAP["X"]]
-                        * (self.max_input_length - len(batch["pos_tags"][-1]))
-                    )
+                # if len(batch["pos_tags"][-1]) < self.max_input_length:
+                #     batch["pos_tags"][-1].extend(
+                #         [POS_TAG_MAP["X"]]
+                #         * (self.max_input_length - len(batch["pos_tags"][-1]))
+                #     )
 
         if self.join_sentences:
             # NOTE: We drop the last batch if it's not full. This is just to ensure every example is the same length which makes things easier.
@@ -224,9 +224,9 @@ class DatasetPreprocessor(object):
                 batch["attention_mask"].append(
                     full_tokenized_inputs["attention_mask"][i : i + self.max_input_length]  # type: ignore
                 )
-                batch["pos_tags"].append(
-                    full_tokenized_inputs["pos_tags"][i : i + self.max_input_length]  # type: ignore
-                )
+                # batch["pos_tags"].append(
+                #     full_tokenized_inputs["pos_tags"][i : i + self.max_input_length]  # type: ignore
+                # )
                 batch["filename"].append(full_tokenized_inputs["filename"][i])
 
         if self.callback_functions:
