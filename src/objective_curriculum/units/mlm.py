@@ -47,7 +47,7 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         return batch
 
     # We override this function to allow us to adjust the probability of unmasking
-    def torch_mask_tokens(self, inputs: Any, special_tokens_mask=None):
+    def torch_mask_tokens(self, inputs: Any, special_tokens_mask=None, **kwargs):
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
