@@ -36,6 +36,7 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         """
         for ex in examples:
             ex.pop("offset_mapping", None)
+        print(examples[0].keys())
         batch: Dict[str, Any] = super().torch_call(examples, *args)
         assert "labels" in batch
 
