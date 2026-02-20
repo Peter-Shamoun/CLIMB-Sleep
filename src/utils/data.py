@@ -198,7 +198,7 @@ class DatasetPreprocessor(object):
                     )
                     # batch["pos_tags"].append(
                     #     pos_tags[i : i + self.max_input_length]
-                    )
+                    # )
                     batch["filename"].append(filename)
                 # Need to do extra padding for pos tags because the tokenizer padding doesn't work on them
                 # if len(batch["pos_tags"][-1]) < self.max_input_length:
