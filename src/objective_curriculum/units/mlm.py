@@ -42,8 +42,8 @@ class _DataCollatorForLanguageModeling(DataCollatorForLanguageModeling):
 
         batch["input_ids_mlm"] = batch["input_ids"]
         batch["labels_mlm"] = batch["labels"]
-        del batch["labels"]  # each task has its own labels
-        del batch["input_ids"]  # each task has its own input_ids
+        # del batch["labels"]  # each task has its own labels
+        # del batch["input_ids"]  # each task has its own input_ids
         return batch
 
     # We override this function to allow us to adjust the probability of unmasking
