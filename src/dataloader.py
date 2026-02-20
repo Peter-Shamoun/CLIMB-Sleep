@@ -182,7 +182,7 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             data["input_ids"] = input_ids
 
         # remove ignored columns
-        print(f"Ignore columns: {self.loader.ignore_columns}")
+        # print(f"Ignore columns: {self.loader.ignore_columns}")
         if self.loader.ignore_columns is not None:
             for ignore_column in self.loader.ignore_columns:
                 data.pop(ignore_column, None)
