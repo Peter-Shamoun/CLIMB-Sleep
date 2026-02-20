@@ -557,8 +557,9 @@ class CustomTrainer(Trainer):
             # averaging over the processes
             total_unit_loss_scalar = self._nested_gather(unit_loss).mean().item()  # type: ignore
             loss_metrics[f"loss_{unit_name}"] = total_unit_loss_scalar
-            curr_phase = self.callback_handler.train_dataloader.sampler.phase
-            loss_metrics[f"loss_{unit_name}_{curr_phase}"] = total_unit_loss_scalar
+            if self.sleep_mechanism_cfg:
+                curr_phase = self.callback_handler.train_dataloader.sampler.phase
+                loss_metrics[f"loss_{unit_name}_{curr_phase}"] = total_unit_loss_scalar
 
             total_loss += unit_loss
 
