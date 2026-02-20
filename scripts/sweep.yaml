@@ -1,10 +1,10 @@
 program: train.py
-name: scl-sweep
+name: scl-sweep-2
 project: sleep-consolidated-learning
 method: bayes
 metric:
   goal: minimize
-  name: eval/loss
+  name: eval/best_perplexity_mean
 
 parameters:
   trainer.lr:
