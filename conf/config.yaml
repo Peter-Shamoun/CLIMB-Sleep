@@ -19,7 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "default-run"
+  name: "best-sweep-params-run"
   output_dir: "/mnt/data"
 
 data_preprocessing:
@@ -33,7 +33,7 @@ trainer:
   num_warmup_steps: 50,000
   max_training_steps: 400_000
   eval_blimp: False
-  eval_fast: False
+  eval_fast: True
   eval_glue: False
   eval_msgs: False
   eval_perplexity: True
