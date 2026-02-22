@@ -1,0 +1,13 @@
+# Sleep mechanism configuration for the best sweep so far
+
+wake_block_steps: 9999999 # 1000
+sleep_max_steps: 500
+sleep_loss_threshold: 0.5
+replay_ratio: 0.5613902220158017
+replay_strategy: "weighted"
+# plasticity_decay_type: lr_decay
+# plasticity_decay_rate: 0.9
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True

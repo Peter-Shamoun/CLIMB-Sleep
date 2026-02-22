@@ -6,7 +6,7 @@ defaults:
   - model: roberta_pln_small
   - tokenizer: cbt_8192
   # Uncomment the following line to enable sleep mechanism:
-  - sleep_mechanism: default
+  - sleep_mechanism: best_sweep
 
 dataset:
   name: "cambridge-climb/BabyLM"
@@ -28,9 +28,9 @@ data_preprocessing:
   max_input_length: 128
 
 trainer:
-  batch_size: 32 # across 4 GPUs gives an effective batch size of 128
-  lr: 1e-3 # 1e-4 is used in fairseq; 1e-3 is default in huggingface
-  num_warmup_steps: 100_000
+  batch_size: 16 
+  lr: 0.0013079571246748126 # 1e-4 is used in fairseq; 1e-3 is default in huggingface
+  num_warmup_steps: 50,000
   max_training_steps: 400_000
   eval_blimp: False
   eval_fast: False
