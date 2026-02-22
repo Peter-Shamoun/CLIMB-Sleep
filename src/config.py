@@ -182,6 +182,8 @@ class SleepMechanismParams(DictConfig):
     sleep_loss_threshold: float
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
+    # How to select samples from replay buffer. Choose from random, weighted, or strict.
+    replay_strategy: str = "weighted"
     # Plasticity decay type
     # plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
     # Factor by which to decay plasticity

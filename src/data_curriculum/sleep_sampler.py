@@ -21,7 +21,7 @@ class SleepSampler(Sampler):
         n_augmentations = 40,
         max_seq_length: int = 128,
         contextualize_sleep: bool = True,
-        replay_strategy: str = "loss"
+        replay_strategy: str = "weighted"
     ) -> None:
         """
         Args:
@@ -182,7 +182,7 @@ class SleepSampler(Sampler):
         Updates the replay buffer with high-loss samples from the wake phase.
         """
         num_replay = int(len(self.wake_candidates.keys()) * self.replay_ratio)
-        if self.replay_strategy == "loss":
+        if self.replay_strategy == "strict":
             # Sort wake candidates by loss
             sorted_candidates = sorted(
                 self.wake_candidates.items(),
@@ -190,7 +190,7 @@ class SleepSampler(Sampler):
                 reverse=True
             )
             self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_replay]]
-        elif self.replay_strategy == "loss_weighted":
+        elif self.replay_strategy == "weighted":
             # Sample from wake candidates weighted by loss
             candidate_indices = list(self.wake_candidates.keys())
             candidate_losses = torch.tensor(list(self.wake_candidates.values()))
