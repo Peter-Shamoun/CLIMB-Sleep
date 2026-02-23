@@ -30,7 +30,7 @@ data_preprocessing:
 trainer:
   batch_size: 16 
   lr: 0.0013079571246748126 # 1e-4 is used in fairseq; 1e-3 is default in huggingface
-  num_warmup_steps: 50,000
+  num_warmup_steps: 50_000
   max_training_steps: 400_000
   eval_blimp: False
   eval_fast: True
