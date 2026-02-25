@@ -1,0 +1,23 @@
+program: train.py
+name: scl-grid-sweep
+project: sleep-consolidated-learning
+method: grid
+metric:
+  goal: minimize
+  name: eval/best_perplexity_mean
+
+parameters:
+  sleep_mechanism.replay_ratio:
+    values: [0.2, 0.6, 1.0]
+  sleep_mechanism.sleep_max_steps:
+    values: [500, 1000, 2000]
+  sleep_mechanism.n_phases:
+    values: [1, 50, 100]
+  sleep_mechanism.contextualize_sleep:
+    values: [True, False]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}
