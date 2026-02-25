@@ -19,7 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "baseline-like-run"
+  name: "sleep-baseline-like-run"
   output_dir: "/mnt/data"
 
 data_preprocessing:
