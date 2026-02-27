@@ -1,5 +1,5 @@
 program: train.py
-name: scl-grid-sweep
+name: scl-grid-sweep-2
 project: sleep-consolidated-learning
 method: grid
 metric:
