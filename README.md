@@ -39,6 +39,53 @@ Additionally, make sure you are logged in to wandb with your wandb API token:
 wandb login --relogin <YOUR TOKEN HERE>
 ```
 
+Alternatively, you may store your keys in the correct environment variables and run 
+```
+./setup.sh
+```
+## Train Sleep Model
+
+Set the appropriate hyperparameters in `conf/config.yaml`, including pointing to the correct sleep mechanism file.
+You may also change the sleep hyperparameters directly in the configs within `conf/sleep_mechanism`.
+
+Then, simply run
+```
+python train.py
+```
+This will also download and preprocess the BabyLM strict-small dataset, which is used for training.
+
+## Run Sweep
+
+Set your sweep range in the `scripts/sweep.yaml` file. Then, run 
+```
+python TODO_sweep_script.py
+```
+
+## Dataset
+
+We use one of the BabyLM Challenge datasets, a curated corpus that is designed to mimic the linguistic input that children receive during early language acquisition.
+Specifically, we utilize the 10M-word strict-small text-only dataset, which roughly represents the amount of word tokens a child encounters by age 13.
+
+This dataset is made up of a combination of sources from specifically two domains:
+| **Domain**              | **Source**                     | **Description**             | **Words (M)**      | **\%**        |
+|-------------------------|--------------------------------|-----------------------------|--------------------|---------------|
+|*Transcribed Speech*     | OpenSubtitles                  | Movie and TV subtitles      | 31.28              | 31\%          |
+|*Transcribed Speech*     | QED                            | Educational video subtitles | 10.24              | 11\%          |
+|*Transcribed Speech*     | British National Corpus        | Transcribed dialogue        | 8.16               | 8\%           |
+|*Transcribed Speech*     | CHILDES                        | Adult-child interactions    | 4.21               | 5\%           |
+|*Transcribed Speech*     | Switchboard Corpus             | Telephone conversations     | 1.18               | 1\%           |
+|                         | *Subtotal*                     |                             | *55.07*            | *56\%*        |
+|*Child-Directed Language*| Simple Wikipedia               | Simplified encyclopedia     | 14.66              | 15\%          |
+|*Child-Directed Language*| Wikipedia                      | Standard encyclopedia       | 10.08              | 10\%          |
+|*Child-Directed Language*| Children's Book Test           | Children’s books collection | 5.55               | 6\%           |
+|*Child-Directed Language*| Children's Stories Text Corpus | Selected children's stories | 3.22               | 3\%           |
+|*Child-Directed Language*| Standard Project Gutenberg     | Literary texts              | 9.46               | 10\%          |
+|                         | *Subtotal*                     |                             | *42.97*            | *44\%*        |
+|**Total**                |                                |                             | **98.04**          | **100\%**     |
+
+
+This composition is meant to reflect the oral and written language input children naturally receive, with a majority coming from spoken or conversational sources to mirror how hearing children acquire language.
+
 ## Overview 
 
 The entry point to the codebase is the `train.py` file. This file expects to receive a hydra-style config file that stores all relevant parameters for the dataset, data processing, tokenization, and model training. [Hydra](https://hydra.cc/docs/tutorials/structured_config/intro/) provides a system for structuring config files in a hierarchical, decomposable format.
