@@ -20,17 +20,6 @@ By consolidating abstract representations of our memories in sleeping periods, h
 
 It is clear that sleep is a process of utmost importance for cognitive development, and contributes to how humans are able to quickly encode and retain information from recent experiences without truly experiencing them more than once. In this project, we will explore sleep-inspired, cognitively-plausible training schedules for language models in the hopes of producing data-efficient training paradigms that diverge from standard multi-epoch conventions.
 
-## Dataset
-We use one of the BabyLM Challenge datasets, a curated corpus that is designed to mimic the linguistic input that children receive during early language acquisition. Specifically, we utilize the 100M-word text-only dataset, which roughly represents the amount of word tokens a child encounters by age 13 (Warstadt et al. 2023).
-
-This dataset is made up of a combination of sources from specifically two domains, as shown below:
-  * **Transcribed speech** (56%, ~55M words): movie and video subtitles, dialogue transcripts, adult-child interactions, and phone conversations
-  * **Child-directed language** (44%, ~43M words): children's books, standard and simplified encyclopedia articles, and literary texts
-
-Below is a more detailed breakdown of each source:
-![Composition of the BabyLM 100M Word Dataset](./misc/dataset_sources_breakdown.png)
-
-This composition is meant to reflect the oral and written language input children naturally receive, with a majority coming from spoken or conversational sources to mirror how hearing children acquire language (Warstadt et al. 2023).
 
 ## Setup 
 
