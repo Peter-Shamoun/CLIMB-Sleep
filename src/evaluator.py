@@ -164,7 +164,7 @@ class BabyLMEvaluator(object):
                         if ":" not in line:
                             continue
                         metric, value = line.split(":")
-                        accuracies[f"babylm_{metric}"] = float(value)
+                        accuracies[f"babylm_{task}_{subtask}_{metric}"] = float(value)
 
         accuracies["babylm_avg"] = sum(accuracies.values()) / len(accuracies)
             
