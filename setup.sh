@@ -1,18 +1,17 @@
+EVAL_DATA_DIR=$1
 
-module rm rhel7/global
-module rm rhel7/default-gpu
+python -m venv .venv
+source .venv/bin/activate
 
-if [ ! -d "env" ]; then
-	pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
-	pip install hydra-core
-	pip install wandb
-	pip install -r requirements.txt
-	huggingface-cli login
-	wandb login --relogin $WANDB_API_KEY
-else 
-	source env/bin/activate
-fi
-source .env
+# Install dependencies
+pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
+pip install hydra-core
+pip install wandb
+pip install -r requirements.txt
 
+# Install evaluation pipeline
+git submodule update --init
+mkdir lib/evaluation-pipeline-2025/evaluation_data
+unzip $EVAL_DATA_DIR -d lib/evaluation-pipeline-2025/evaluation_data/
 
-export PATH="$(pwd)/lib/bin:$PATH"
+echo "Completed setup"

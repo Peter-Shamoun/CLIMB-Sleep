@@ -23,6 +23,8 @@ It is clear that sleep is a process of utmost importance for cognitive developme
 
 ## Setup 
 
+### Environment Installation
+
 To set up your environment, you should run the following commands:
 
 ```
@@ -33,21 +35,34 @@ pip install -r requirements.txt
 ```
 This will install the necessary libraries to run our code. Be sure to install the correct torch distribution for your CUDA version.
 
-In order to interact with the hub, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names HF_READ_TOKEN and HF_WRITE_TOKEN.
+### Evaluation Script
+BabyLM evaluation is optionally run during training, but always runs at the end of training.
+To install the evaluation scripts, run the following to expand the submodule for the eval pipeline:
+```
+git submodule update --init
+```
+Download the `evaluation_data` folder in [this OSF directory](https://osf.io/ryjfm/).
+Then, run the following to unzip the data into the correct location:
+```
+mkdir lib/evaluation-pipeline-2025/evaluation_data
+unzip /path/to/evaluation_data.zip -d lib/evaluation-pipeline-2025/evaluation_data/
+```
 
-Additionally, make sure you are logged in to wandb with your wandb API token:
-```
-wandb login --relogin <YOUR TOKEN HERE>
-```
+### HF Hub and WandB
+In order to interact with the hub, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names `HF_READ_TOKEN` and `HF_WRITE_TOKEN`.
 
-Alternatively, you may store your keys in the correct environment variables and run 
+Additionally, make sure you are logged in to wandb by storing your wandb API token in an environment variable called `WANDB_API_TOKEN`.
 ```
-./setup.sh
+HF_READ_TOKEN = <your-read-tok>
+HF_WRITE_TOKEN = <your-write-tok>
+WANDB_API_TOKEN = <your-wandb-tok>
 ```
 ## Train Sleep Model
 
 Set the appropriate hyperparameters in `conf/config.yaml`, including pointing to the correct sleep mechanism file.
-You may also change the sleep hyperparameters directly in the configs within `conf/sleep_mechanism`.
+You may also change the sleep hyperparameters directly in the config files within `conf/sleep_mechanism`.
+
+For example, to train with a default set of sleep parameters, make sure in  `conf/config.yaml`, `sleep_mechanism` is set to `default`. 
 
 Then, simply run
 ```
@@ -87,12 +102,6 @@ This dataset is made up of a combination of sources from specifically two domain
 
 This composition is meant to reflect the oral and written language input children naturally receive, with a majority coming from spoken or conversational sources to mirror how hearing children acquire language.
 
-## Overview 
-
-The entry point to the codebase is the `train.py` file. This file expects to receive a hydra-style config file that stores all relevant parameters for the dataset, data processing, tokenization, and model training. [Hydra](https://hydra.cc/docs/tutorials/structured_config/intro/) provides a system for structuring config files in a hierarchical, decomposable format.
-
-In the subsequent section, we outline the high-level structure of our code-base. 
-
 ### Config Files
 Under `/src/config.py` you will find the general structure of the hydra config file that our program expects. The purpose of explicitly defining the structure of the config in this manner is two fold 1) to show the user the set of available configurable options 2) to run type-checking on passed in configs, ensuring that the parameters and their types match this pre-defined format. 
 
@@ -104,7 +113,8 @@ The `/conf` directory stores all the default configs and subconfigs. The entry p
 
 We define a custom SleepDataLoader in `/src/dataloader.py` that subclasses the normal hugging face Dataloader class. In the SleepDataLoader, unlike in the normal DataLoader, we are able to keep track of the global step number of training (i.e. how many batches of training data have already been trained on) and indices of the data we train on. This information is useful because it allows us to configure special behavior of the Trainer for different parts of training -- this is key for the functionality of the sleep data sampling. We also implement context-augmented padding within the dataloader.
 
-We also implement the SleepSampler, in `/src/data_curriculum/sleep_sampler.py`. This subclasses the PyTorch Sampler, and implements much of the sleep functionality, including switching between phases, limiting access to specific folds of the data, and maintaining a replay buffer.
+We also implement the SleepSampler, in `/src/data_curriculum/sleep_sampler.py`.
+This subclasses the PyTorch Sampler, and implements much of the sleep functionality, including switching between phases, limiting access to specific folds of the data, and maintaining a replay buffer.
 
 ### Preprocessing and Tokenization
 
@@ -112,7 +122,9 @@ Other useful methods for data preprocessing, tokenizer and inference can be foun
 
 ### Evaluation
 
-TODO
+Perplexity evaluations are done within the training script and logged to Weights and Biases.
+For linguistic (BabyLM) evaluations, we use the official BabyLM Evaluation Pipeline from 2025.
+
 
 ### Model Architecture 
 
