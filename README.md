@@ -60,6 +60,8 @@ Then, simply run
 python train.py
 ```
 This will also download and preprocess the BabyLM strict-small dataset, which is used for training.
+If all is running well, progress bars should show training progress and, if sleep mechanism is active, transitions between wake and sleep phases.
+Model and checkpoints will be saved to the output directory specified in the config file.
 
 ### Run Sweep
 
@@ -107,6 +109,41 @@ This dataset is made up of a combination of sources from specifically two domain
 This composition is meant to reflect the oral and written language input children naturally receive, with a majority coming from spoken or conversational sources to mirror how hearing children acquire language.
 
 ## Implementation Details
+### Directory Structure
+Below is a diagram of the most important parts of our repository, with key files/directories highlighted.
+Different elements of the model (trainer, dataloader, sampler) are split into their own files to keep things organized.
+Most of our novel implementations can be found under `src`, and are described in further detail below.
+```
+.
+├── conf/
+│   ├── ...
+│   ├── model
+│   └── config.yaml # main configuration file
+├── lib/
+│   └── evaluation-pipeline-2025/
+│       └── ... #BabyLM eval pipeline
+├── results/
+│   ├── babylm_eval/
+│   │   └── ... # eval results
+│   ├── plots/
+│   │   └── ...
+│   └── plotting.ipynb # result analysis script
+├── src/
+│   ├── data_curriculum/
+│   │   └── sleep_sampler.py # code for our custom sampler
+│   ├── models/
+│   │   └── ...
+│   ├── data/
+│   │   └── ...
+│   ├── config.py # config structure
+│   ├── dataloader.py # contains custom SleepDataloader
+│   ├── tokenizer.py
+│   └── trainer.py # custom code for handling sleep/wake cycles
+├── tests/
+│   └── test_sleep_sampler.py # unit tests for sleep sampler
+└── train.py # entry point
+```
+
 ### Config Files
 Under `/src/config.py` you will find the general structure of the hydra config file that our program expects. The purpose of explicitly defining the structure of the config in this manner is two fold 1) to show the user the set of available configurable options 2) to run type-checking on passed in configs, ensuring that the parameters and their types match this pre-defined format. 
 
