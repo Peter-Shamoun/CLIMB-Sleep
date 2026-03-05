@@ -1,4 +1,8 @@
-![cover-banner](./misc/sleep_mechanism_diagram.png)
+<figure>
+  <img src="./misc/sleep_mechanism_diagram.jpg" alt="Sleep Mechanism Diagram" style="width:100%">
+  <figcaption>One phase in the Sleep Mechanism.</figcaption>
+</figure>
+
 # Sleep-Consolidated lerning and Plasticity Decay
 
 Language Models (LMs), while powerful, are extremely resource-intensive to train. 
