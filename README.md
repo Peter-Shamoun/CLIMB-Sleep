@@ -78,6 +78,9 @@ To train the corresponding model(s), switch to that branch and run `train.py`.
 | Baselines        | `baseline_run`, `baseline_like_run` |
 | Replay Experiments | `random_replay_run`, `weighted_replay_run`, `strict_replay_run`|
 
+### Experimental Results
+Results from our experiments are included in the `results` folder, including the notebook used to generate key visualizations.
+
 ## Dataset
 
 We use one of the BabyLM Challenge datasets, a curated corpus that is designed to mimic the linguistic input that children receive during early language acquisition.
