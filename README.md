@@ -51,11 +51,11 @@ unzip /path/to/evaluation_data.zip -d lib/evaluation-pipeline-2025/evaluation_da
 ### HF Hub and WandB
 In order to interact with the hub, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names `HF_READ_TOKEN` and `HF_WRITE_TOKEN`.
 
-Additionally, make sure you are logged in to wandb by storing your wandb API token in an environment variable called `WANDB_API_TOKEN`.
+Additionally, make sure you are logged in to wandb by storing your wandb API key in an environment variable called `WANDB_API_KEY`.
 ```
 HF_READ_TOKEN = <your-read-tok>
 HF_WRITE_TOKEN = <your-write-tok>
-WANDB_API_TOKEN = <your-wandb-tok>
+WANDB_API_KEY = <your-wandb-key>
 ```
 ## Train Sleep Model
 

@@ -14,4 +14,7 @@ git submodule update --init
 mkdir lib/evaluation-pipeline-2025/evaluation_data
 unzip $EVAL_DATA_DIR -d lib/evaluation-pipeline-2025/evaluation_data/
 
+# Login
+wandb login
+
 echo "Completed setup"
