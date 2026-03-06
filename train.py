@@ -211,10 +211,9 @@ def main(cfg: BabyLMConfig):
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
     logger.info("Training complete!")
-    # trainer.eval_glue = True
-    # trainer.eval_msgs = True
-    # trainer.eval_blimp = True
-    # trainer.eval_perplexity = True
+    
+    # Always do fast eval at the end
+    trainer.eval_fast = True
     trainer.evaluate(
         metric_key_prefix="eval_best"
     )  # Note that this will also save the best model in the main output directory

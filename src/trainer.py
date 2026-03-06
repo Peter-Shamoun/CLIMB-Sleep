@@ -333,6 +333,7 @@ class CustomTrainer(Trainer):
                     max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
                     contextualize_sleep=True,
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
+                    replay_strategy=self.sleep_mechanism_cfg.replay_strategy
                 )
             elif self.data_curriculum_cfg:
                 # A data-driven curriculum assumes we are using a difficulty scorer along with a
