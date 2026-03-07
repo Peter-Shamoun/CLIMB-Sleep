@@ -40,7 +40,7 @@ HF_WRITE_TOKEN = <your-write-tok>
 WANDB_API_KEY = <your-wandb-key>
 ```
 
-### Environment Installation
+### Environment Setup Instructions
 Once the evaluation data is downloaded and your keys are set, run the `setup.sh` script to prepare your environment and install the evaluation pipeline.
 ```
 ./setup.sh ./evaluation_data.zip
@@ -51,17 +51,16 @@ If you've downloaded the eval data somewhere else, replace `./evaluation_data.zi
 ### Train Sleep Model
 
 Set the appropriate hyperparameters in `conf/config.yaml`, including pointing to the correct sleep mechanism file.
+Be sure to change the output directory and wandb entity/project to suit your needs.
 You may also change the sleep hyperparameters directly in the config files within `conf/sleep_mechanism`.
-
 For example, to train with a default set of sleep parameters, make sure in  `conf/config.yaml`, `sleep_mechanism` is set to `default`. 
 
+Be sure to activate the virtual environment created by `setup.sh`.
 Then, simply run
 ```
 python train.py
 ```
 This will also download and preprocess the BabyLM strict-small dataset, which is used for training.
-If all is running well, progress bars should show training progress and, if sleep mechanism is active, transitions between wake and sleep phases.
-Model and checkpoints will be saved to the output directory specified in the config file.
 
 ### Run Sweep
 
@@ -80,8 +79,16 @@ To train the corresponding model(s), switch to that branch and run `train.py`.
 | Baselines        | `baseline_run`, `baseline_like_run` |
 | Replay Experiments | `random_replay_run`, `weighted_replay_run`, `strict_replay_run`|
 
+### Expected Outputs
+If all is running well, progress bars should show training progress and, if sleep mechanism is active, transitions between wake and sleep phases.
+Evaluation metrics will be logged to wandb in the project specified in the config file.
+Model and checkpoints will be saved to the output directory specified in the config file.
+
 ### Experimental Results
 Results from our experiments are included in the `results` folder, including the notebook used to generate key visualizations.
+Some additional environment setup may be required to run the plotting notebook, including installing seaborn and matplotlib.
+
+Once run, all plots will be shown in the notebook as well as saved in `results/plots/`.
 
 ## Dataset
 
