@@ -1,7 +1,7 @@
 import wandb
 import yaml
 
-PROJECT_NAME = "scl-sweep-peter"
+PROJECT_NAME = "scl-sweep"
 
 if __name__ == "__main__":
     yaml_file_path = "scripts/sweep.yaml"
@@ -14,4 +14,4 @@ if __name__ == "__main__":
         project=PROJECT_NAME
     )
 
-    wandb.agent(sweep_id, count=30)
+    wandb.agent(sweep_id, count=60)
