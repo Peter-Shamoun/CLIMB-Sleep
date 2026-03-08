@@ -76,6 +76,13 @@ python train.py
 
 This will also download and preprocess the BabyLM strict-small dataset, which is used for training.
 
+To run evaluation after training, ensure you have installed the evaluation pipeline by verifying the directory `lib/evaluation-pipeline-2025` is populated and the evaluation data is downloaded.
+Then, run:
+```
+./lib/evaluation-pipeline-2025 /path/to/model/lm_head /output/path mlm 
+```
+Results from the evaluation will be saved to the desired output path.
+
 ### Run Sweep
 
 Set your sweep ranges in the `scripts/sweep.yaml` file. Then, run
