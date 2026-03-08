@@ -153,10 +153,6 @@ def main(cfg: BabyLMConfig) -> None:
     print("Current phase:", sleep_sampler.phase)
     sleep_sampler.switch_phase("SLEEP")
     print("Switched to phase:", sleep_sampler.phase)
-    
-    
-    print("===Wake Phase===")
-    
 
 if __name__ == "__main__":
     main()
