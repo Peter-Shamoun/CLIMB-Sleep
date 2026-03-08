@@ -61,6 +61,16 @@ If you've downloaded the eval data somewhere else, replace `./evaluation_data.zi
 
 ## Running Experiments
 
+### Testing the Sleep Sampler
+
+To see the sleep sampler in action, run:
+```
+python sleep_tester.py
+```
+A series of print statements will run displaying the samples returned by the sampler, fold sizes, the effect of different replay strategies, etc.
+If everything is working, the fold sizes should all be even (except potentially the last).
+Average loss of sampled data should also be higher for strict (loss) than weighted, and higher for weighted than random.
+
 ### Train Sleep Model
 
 Set the appropriate hyperparameters in `conf/config.yaml`, including pointing to the correct sleep mechanism file.
