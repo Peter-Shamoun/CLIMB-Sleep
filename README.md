@@ -30,7 +30,7 @@ However, we contribute a novel data loading strategy and training schedule, whic
 
 ## Setup
 
-### Evaluation Script
+### Evaluation Data
 
 BabyLM evaluation is optionally run during training, but always runs at the end of training.
 Download the `evaluation_data` folder in [this OSF directory](https://osf.io/ryjfm/).
@@ -38,9 +38,10 @@ Make sure the resulting `evaluation.zip` file is stored in the root directory of
 
 ### HF Hub and WandB
 
-In order to interact with the hub, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names `HF_READ_TOKEN` and `HF_WRITE_TOKEN`.
+In order to access the dataset, you need to generate read and write [access tokens](https://huggingface.co/docs/hub/security-tokens) from your hugging face account. Once generated, store these values as environment variables with the names `HF_READ_TOKEN` and `HF_WRITE_TOKEN`.
 
 Additionally, make sure you are logged in to wandb by storing your wandb API key in an environment variable called `WANDB_API_KEY`.
+This will allow for logging of metrics during training and at the end of training.
 
 ```
 HF_READ_TOKEN = <your-read-tok>
