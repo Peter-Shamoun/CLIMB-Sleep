@@ -8,25 +8,25 @@
 ### _Humans don't relive the same day ten times. Why should language models?_
 
 Language Models (LMs), while powerful, are extremely resource-intensive to train.
-Effective LMs require hundreds of times more data to build an understanding of language than human children, often more text than a human will ever be exposed to in their entire lifetime.
-Additionally, training modern language models is expensive and repetitive.
-Models read the same data over and over, sometimes dozens of times, to learn effectively.
+Effective LMs require hundreds of times more data than human children, often more text than a human will ever be exposed to in their entire lifetime.
+Additionally, training modern language models is repetitive.
+Models read the same data over and over, sometimes hundreds of times, to learn effectively.
 This is entirely different from how humans acquire language/knowledge: we live through every day once, and experience everything only once.
-In addition to not being cognitively plausible, epoch training means that even after the model has mastered easier samples, it is still re-trained on those same samples in the same contexts as before, wasting resources and leading to overfitting.
-This disconnect between the training schedules of LMs and human language acquisition could not only contribute to their inefficiency, but also means that there are strong limitations in the use and interpretation of LMs as cognitive models.
+It also means that after the model has mastered easier samples, it is still re-trained on those same samples in the same contexts as before, wasting resources and leading to overfitting.
+This disconnect between human language acquisition and the training schedules of LMs both contributes to LMs' inefficiency and imposes strong limitations in the use of LMs as cognitive models.
 
-Humans, however, do revisit past experiences during sleep.
+Humans, however, do revisit past experiences during *sleep*.
 Neuroscience research has shown that sleep is not just a period of rest, but critical for developing memories.
 While the waking brain is optimized for encoding new experiences into memory, during sleep, the brain undergoes a process called _memory consolidation_, where they are stabilized and integrated into pre-existing synaptic networks.
 By consolidating abstract representations of our memories in sleeping periods, humans also retain world knowledge and episodic memory of recent events (declarative memory) as well as intuition and unconscious long-term memories that influence their behavior (non-declarative memory), both of which are important for learning complex skills such as language.
 
-It is clear that sleep is a process of utmost importance for cognitive development, and contributes to how humans are able to quickly encode and retain information from recent experiences without truly experiencing them more than once.
+It is clear that sleep is a process of utmost importance for cognitive development and contributes to how humans are able to quickly encode and retain information from recent experiences without truly experiencing them more than once.
 In this project, we will explore sleep-inspired, cognitively-plausible training schedules for language models in the hopes of producing data-efficient training paradigms that diverge from standard multi-epoch conventions.
 
 **Contributions.**
 Due to similarities in goal and implementation, we build upon the code of Diehl Martinez et. al. (<a href="https://github.com/codebyzeb/CLIMB">GitHub</a>), for our training pipeline.
 We reuse their data preprocessing and model loading scripts.
-However, we contribute a novel data loading strategy and training schedule, which we dub the sleep mechanism.
+However, we contribute a novel data loading strategy and training schedule, which we dub the *sleep mechanism*.
 
 ## Setup
 
