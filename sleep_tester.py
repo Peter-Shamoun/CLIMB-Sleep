@@ -17,8 +17,8 @@ from wandb.errors import CommError as WandbCommError
 # from hydra.core.config_store import ConfigStore
 # from omegaconf import OmegaConf
 from torch.distributed.elastic.multiprocessing.errors import record
-# from transformers.training_args import TrainingArguments
-# from wandb.errors import CommError as WandbCommError
+from transformers.training_args import TrainingArguments
+from wandb.errors import CommError as WandbCommError
 
 # wandb for logging metrics
 # import wandb
@@ -128,7 +128,7 @@ def main(cfg: BabyLMConfig) -> None:
     print("===Adding to Replay Buffer===")
     print()
     print("Loss replay strategy")
-    sleep_sampler.replay_strategy = "loss"
+    sleep_sampler.replay_strategy = "strict"
     sleep_sampler.update_replay_buffer()
     print("Replay buffer size:", len(sleep_sampler.replay_buffer))
     print("Replay buffer contents:", sleep_sampler.replay_buffer[:10])  # Show first 10 elements
@@ -142,7 +142,7 @@ def main(cfg: BabyLMConfig) -> None:
     print("Replay Buffer avg. loss:", np.mean([sleep_sampler.wake_candidates[i] for i in sleep_sampler.replay_buffer]))
     print()
     print("Loss-weighted replay strategy")
-    sleep_sampler.replay_strategy = "loss_weighted"
+    sleep_sampler.replay_strategy = "weighted"
     sleep_sampler.update_replay_buffer()
     print("Replay buffer size:", len(sleep_sampler.replay_buffer))
     print("Replay buffer contents:", sleep_sampler.replay_buffer[:10])
@@ -153,10 +153,6 @@ def main(cfg: BabyLMConfig) -> None:
     print("Current phase:", sleep_sampler.phase)
     sleep_sampler.switch_phase("SLEEP")
     print("Switched to phase:", sleep_sampler.phase)
-    
-    
-    print("===Wake Phase===")
-    
 
 if __name__ == "__main__":
     main()
