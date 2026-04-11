@@ -167,6 +167,7 @@ class PlasticityDecayType(str, Enum):
     lr_decay = "lr_decay"
     freeze_layers = "freeze_layers"
     pruning = "pruning"
+    synaptic_homeostasis = "synaptic_homeostasis"
 
 
 # Sleep mechanism params
@@ -184,10 +185,10 @@ class SleepMechanismParams(DictConfig):
     replay_ratio: float = 0.1
     # How to select samples from replay buffer. Choose from random, weighted, or strict.
     replay_strategy: str = "weighted"
-    # Plasticity decay type
-    # plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
-    # Factor by which to decay plasticity
-    # plasticity_decay_rate: float = 0.9
+    plasticity_decay_type: Optional[PlasticityDecayType] = None
+    plasticity_decay_rate: float = 0.9
+    protect_percentile: float = 95.0
+    zero_threshold: float = 1e-4
     # Number of context augmentations applied per batch
     n_augmentations: int = 40
     # Number of wake-sleep cycles

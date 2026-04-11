@@ -50,7 +50,8 @@ from src.data_curriculum.contextualize_collate import context_augmented_collate
 from wandb import Table
 
 # typing imports
-from .config import BabyLMConfig
+from .config import BabyLMConfig, PlasticityDecayType
+from .synaptic_homeostasis import apply_synaptic_homeostasis
 
 # Data Sampling and Data Curriculum
 from .data_curriculum.datasampler import (
@@ -932,6 +933,16 @@ class CustomTrainer(Trainer):
         # eval before sleep
         logger.info("Running evaluation before %s phase...", next_phase)
         self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
+        if (phase == "SLEEP" and next_phase == "WAKE"
+                and self.sleep_mechanism_cfg.plasticity_decay_type
+                == PlasticityDecayType.synaptic_homeostasis):
+            stats = apply_synaptic_homeostasis(
+                unwrap_model(self.model),
+                self.sleep_mechanism_cfg.plasticity_decay_rate,
+                self.sleep_mechanism_cfg.protect_percentile,
+                self.sleep_mechanism_cfg.zero_threshold,
+            )
+            logger.info("Synaptic homeostasis: %s", stats)
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
         if next_phase == "SLEEP":
