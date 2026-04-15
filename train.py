@@ -72,9 +72,6 @@ def main(cfg: BabyLMConfig):
     if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
         logger.info("Model and Tokenizer Mismatch - resizing model token embeddings")
         model.resize_token_embeddings(len(tokenizer))
-    # assert (
-    #     tokenizer.vocab_size == model.config.vocab_size
-    # ), f"Tokenizer and model vocab size mismatch: {tokenizer.vocab_size}{model.config.vocab_size}"
 
     # Preprocess data
     logger.info("Preprocessing data")
@@ -98,7 +95,6 @@ def main(cfg: BabyLMConfig):
     if cfg.experiment.offline_run:
         os.environ["WANDB_DISABLED"] = "true"
         os.environ["WANDB_MODE"] = "disabled"
-        curriculum_learning_table = None
     else:
         # These environment variables get picked up by Trainer
         os.environ["WANDB_PROJECT"] = cfg.experiment.group
@@ -125,8 +121,6 @@ def main(cfg: BabyLMConfig):
                 id=cfg.experiment.resume_run_id,
                 resume="allow",
             )
-        else:
-            curriculum_learning_table = None
 
     # Set up training arguments
     # TODO: If we are using wandb sweeps, note that we will need to think about how we store/
@@ -199,13 +193,6 @@ def main(cfg: BabyLMConfig):
         curriculum_learning_table=None,
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
-    # dl = trainer.get_train_dataloader()
-    # dl.sampler.switch_phase("SLEEP")
-    # batch = next(iter(dl))
-    # print(batch.keys())
-    # print("Masked input_ids:\n", batch["input_ids"])
-    # print("Labels:\n", batch["labels"])
-    # exit()
     if not cfg.experiment.resume_checkpoint_path:
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
@@ -225,11 +212,4 @@ def main(cfg: BabyLMConfig):
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='Generate text using language models via LM Studio API')
-    # parser.add_argument('--config_path', type=str, required=True,
-    #                     help='Path to the Hydra config file')
-    # args = parser.parse_args()
-    # # Load the config file using Hydra
-    # cfg = hydra.compose(config_name=args.config_path)
-    # main(cfg)
     main()
