@@ -123,7 +123,6 @@ class CustomTrainer(Trainer):
         dry_run: bool,
         args: TrainingArguments,
         tokenizer: PreTrainedTokenizerFast,
-        curriculum_learning_table: Union[Table, None] = None,
         **kwargs,
     ) -> None:
         """
@@ -139,9 +138,7 @@ class CustomTrainer(Trainer):
                 in order to have access to possible arguments meant to be used in the Custom
                 Trainer class.
             * tokenizer (PreTrainedTokenizerFast): The tokenizer used for the current run.
-            * curriculum_learning_table (wandb.Table): The wandb table used to log the curriculum
-                learning progress -- i.e. the difficulty scores, the pacing function values, the
-                data that is being sampled.
+C
         """
 
         self.hydra_config = hydra_config
@@ -157,9 +154,6 @@ class CustomTrainer(Trainer):
 
         super().__init__(args=args, **kwargs)
 
-        self.objective_curriculum_cfg = hydra_config.objective_curriculum
-        self.data_curriculum_cfg = hydra_config.data_curriculum
-        self.vocabulary_curriculum_cfg = hydra_config.vocabulary_curriculum
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
         self.phase_steps = 0
 
@@ -167,40 +161,15 @@ class CustomTrainer(Trainer):
         # We check that this variable is set in the config file when loading the base model
 
         hidden_rep_size = hydra_config.model.model_kwargs["hidden_size"]
-
-        self.objective_curriculum = ObjectiveCurriculum(
-            curriculum_cfg=self.objective_curriculum_cfg,
-            max_steps=args.max_steps,
-            hidden_rep_size=hidden_rep_size,
-            tokenizer=tokenizer,
-            device=self.args.device,
-            local_rank=self.args.local_rank,
-        )
-
-        objective_cl_logger.info(
-            f"(Using objective curriculum configuration {self.objective_curriculum_cfg}"
-        )
-        if self.data_curriculum_cfg:
-            data_cl_logger.info(
-                f"Using data curriculum configuration {self.data_curriculum_cfg}"
-            )
-        if self.vocabulary_curriculum_cfg:
-            data_cl_logger.info(
-                f"Using vocabulary curriculum {self.vocabulary_curriculum_cfg}"
-            )
         if self.sleep_mechanism_cfg:
             logger.info(
                 f"Using sleep mechanism configuration {self.sleep_mechanism_cfg}"
             )
 
         self.tokenizer = tokenizer
-        self.curriculum_learning_table = curriculum_learning_table
         
         # track gradient steps for checkpointing
         self.global_step = 0
-
-        self.add_callback(CurriculumLearningCallback())
-        self.add_callback(TaskTrainerCallback(self.objective_curriculum))
 
     def init_git_repo(self, at_init: bool = False) -> None:
         """
@@ -462,7 +431,7 @@ class CustomTrainer(Trainer):
                 dataset=train_dataset,
                 sampler=train_sampler,
                 tokenizer=self.tokenizer,
-                config=self.objective_curriculum_cfg,
+                # config=self.objective_curriculum_cfg, TODO: Remove obj curr config from SleepDataLoader
                 batch_size=self._train_batch_size,
                 drop_last=self.args.dataloader_drop_last,
                 num_workers=0,
@@ -566,7 +535,7 @@ class CustomTrainer(Trainer):
 
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
-        # incrementing here ensures we take one step per gradient update
+        # incrementing here ensures we trackl one step per gradient update
         self.global_step += 1
         self.phase_steps += 1
         
@@ -919,7 +888,7 @@ class CustomTrainer(Trainer):
 
         return model
         
-    def train(self, resume_from_checkpoint=None, *args, **kwargs):
+    def train(self, *args, resume_from_checkpoint=None, **kwargs):
         """
         Override train to re-intialize phase steps.
         """
