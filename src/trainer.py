@@ -457,7 +457,7 @@ C
 
             ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
         return total_loss
-    def training_step(self, model, inputs, num_items_in_batch=None):
+    def training_step(self, model, inputs):
         loss = super().training_step(model, inputs)
 
         # == SLEEP MECHANISM == #
@@ -762,7 +762,7 @@ C
         )
         self.objective_curriculum.load(task_head_dir)
 
-    def _wrap_model(self, model, training=True, dataloader=None):
+    def _wrap_model(self, model):
         if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
             kwargs = {}
             if self.args.ddp_find_unused_parameters is not None:
