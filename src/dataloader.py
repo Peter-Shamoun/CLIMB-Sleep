@@ -279,9 +279,6 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
         self.sampler = sampler
         
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]], *args, **kwargs) -> Dict[str, Any]:
-        # print("Examples type:", type(examples))
-        # print("Stuff in examples:", type(examples[0]))
-        # print("Stuff in stuff in examples:", type(examples[0][0]))
         if self.sampler.phase == "SLEEP":
             examples = self.context_augment(examples)
         for ex in examples:
@@ -294,12 +291,7 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
                 min_id = min(ids)
 
             assert min_id >= 0, f"Negative token id: {min_id}"
-            # print(max_id < self.tokenizer.vocab_size)# f"Token id {max_id} >= vocab_size {self.tokenizer.vocab_size}"
-        # print("Examples checked!")
         result = super().torch_call(examples, *args, **kwargs)
-        # print(result.keys())
-        # print("Tok Vocab Size:", self.tokenizer.vocab_size)
-        # print("Tok Length:", len(self.tokenizer))
         return result
     
     def context_augment(
