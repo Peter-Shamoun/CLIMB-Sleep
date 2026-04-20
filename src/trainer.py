@@ -44,7 +44,6 @@ from src.models import load_base_model
 from src.utils.data import base_collate_fn
 from src.utils.inference import (
     compute_trainer_perplexity,
-    prepare_dataset_for_ppl_inference,
 )
 from src.data_curriculum.contextualize_collate import context_augmented_collate
 from wandb import Table
@@ -143,6 +142,7 @@ C
 
         self.hydra_config = hydra_config
         self.dry_run = dry_run
+        self.control = None
 
         self.experiment_group = hydra_config.experiment.group
         self.experiment_name = hydra_config.experiment.name
@@ -173,7 +173,7 @@ C
 
     def _get_train_sampler(self):
         """
-        Overriding this method to use custom samplers that enable data-driven curriculum pacing.
+        Overriding this method to use custom samplers that enable sleep mechanism.
         """
 
         if self.train_dataset is None or not has_length(self.train_dataset):
@@ -213,45 +213,8 @@ C
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
                     replay_strategy=self.sleep_mechanism_cfg.replay_strategy
                 )
-            elif self.data_curriculum_cfg:
-                # A data-driven curriculum assumes we are using a difficulty scorer along with a
-                # curriculum pacing function to determine the order in which we sample data.
-
-                pacing_fn = get_pacing_fn(
-                    self.data_curriculum_cfg.pacing_fn_name,
-                    self.args.max_steps,
-                    **self.data_curriculum_cfg.pacing_fn_kwargs,
-                )
-
-                difficulty_scorer = get_difficulty_scorer(
-                    self.data_curriculum_cfg.difficulty_scorer_name,
-                    self.data_curriculum_cfg.difficulty_scorer_kwargs,
-                    trainer=self,
-                )
-
-                if self.args.world_size <= 1:
-                    self._train_sampler = CurriculumSampler(
-                        self.train_dataset,
-                        difficulty_scorer=difficulty_scorer,
-                        pacing_fn=pacing_fn,
-                        batch_size=self.args.per_device_train_batch_size,
-                        generator=generator,
-                        global_stepnum=self.state.global_step,
-                    )
-                else:
-                    self._train_sampler = DistributedCurriculumSampler(
-                        self.train_dataset,
-                        difficulty_scorer=difficulty_scorer,
-                        pacing_fn=pacing_fn,
-                        batch_size=self.args.per_device_train_batch_size,
-                        generator=generator,
-                        global_stepnum=self.state.global_step,
-                        num_replicas=self.args.world_size,
-                        rank=self.args.process_index,
-                        seed=seed,
-                    )
             else:
-                # We are not using a data-driven curriculum, so we can use the default sampler.
+                # We are not using the sleep mechanism, so we can use the default sampler.
                 if self.args.world_size <= 1:
                     self._train_sampler = RandomSampler(self.train_dataset, generator=generator)  # type: ignore
                 else:
@@ -262,26 +225,6 @@ C
                         seed=seed,
                     )
         return self._train_sampler
-
-    def _get_ignore_columns(self, dataset) -> List[str]:
-        """
-        Returns the list of columns to ignore when training. This is used to remove columns that
-        are not used for training, but are used for curriculum pacing.
-
-        Args:
-            * dataset (:class:`~datasets.Dataset`): The dataset to use for training.
-
-        Returns:
-            * (List[str]): The list of columns to ignore when training.
-        """
-        self._set_signature_columns_if_needed()
-        signature_columns = self._signature_columns
-        if signature_columns is None:
-            signature_columns = []
-        ignore_columns = list(
-            set(dataset.column_names) - set(signature_columns)
-        )
-        return ignore_columns
 
     def log(self, logs: Dict[str, float], start_time=None) -> None:
         """
@@ -328,12 +271,6 @@ C
 
         train_dataset = self.train_dataset.remove_columns("filename")  # type: ignore
 
-        # NOTE: In a postprocessing step (after the objective function collation), we will still
-        # need to remove columns that are not in the model signature. We need to pass in these
-        # ignore columns to the dataloader so that they are not included in the batch, but we
-        # might want to use this information when generating the objective.
-        ignore_columns = self._get_ignore_columns(train_dataset)
-
         # check if using sleep mechanism w/ SleepSampler
         if self.sleep_mechanism_cfg and isinstance(train_sampler, SleepSampler):
             return SleepDataLoader(
@@ -350,40 +287,6 @@ C
         assert (
             self.tokenizer is not None
         ), "Tokenizer is not set. Please set the tokenizer before calling the train method."
-
-        # Create the vocabulary map according to the tokenizer curriculum
-        if self.vocabulary_curriculum_cfg:
-            pacing_fn = get_pacing_fn(
-                self.vocabulary_curriculum_cfg.pacing_fn_name,
-                self.args.max_steps,
-                **self.vocabulary_curriculum_cfg.pacing_fn_kwargs,
-            )
-
-            # NOTE: This assert statement should never fail, since we run a similar check on the
-            # tokenizer before initializing the trainer. It is needed, however, to narrow the type
-            # to pass type checking.
-            assert isinstance(self.tokenizer, PreTrainedTokenizerFast)
-            vocabulary_map = get_vocabulary_map(
-                self.vocabulary_curriculum_cfg.vocabulary_curriculum_name,
-                self.tokenizer,
-                pacing_fn,
-            )
-        else:
-            vocabulary_map = None
-
-        return CurriculumDataLoader(
-            global_stepnum=self.state.global_step,
-            objective_curriculum=self.objective_curriculum,  # type: ignore
-            tokenizer=self.tokenizer,
-            vocabulary_map=vocabulary_map,  # type: ignore
-            ignore_columns=ignore_columns,
-            dataset=train_dataset,
-            sampler=train_sampler,
-            batch_size=self._train_batch_size,
-            drop_last=self.args.dataloader_drop_last,
-            num_workers=self.args.dataloader_num_workers,
-            pin_memory=self.args.dataloader_pin_memory,
-        )
 
     def compute_loss(self, model, inputs, **kwargs):
         """
@@ -533,10 +436,6 @@ C
         if self.eval_perplexity:
             perplexities = []
             with torch.no_grad():
-
-                eval_subset = prepare_dataset_for_ppl_inference(
-                    self, eval_subset
-                )
 
                 inference_dataloader = DataLoader(
                     eval_subset,  # type: ignore
