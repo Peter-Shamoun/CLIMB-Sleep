@@ -8,11 +8,11 @@ metric:
 
 parameters:
   sleep_mechanism.replay_ratio:
-    values: [0.2, 0.6, 1.0]
+    values: [0.2, 0.4, 0.6, 1.0]
   sleep_mechanism.sleep_max_steps:
-    values: [500, 1000, 2000]
+    values: [1000, 2000, 4000, 8000]
   sleep_mechanism.n_phases:
-    values: [1, 50, 100]
+    values: [1, 25, 50, 100]
   sleep_mechanism.contextualize_sleep:
     values: [True, False]
 
