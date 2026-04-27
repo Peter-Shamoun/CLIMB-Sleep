@@ -13,7 +13,7 @@ from torch.utils.data.dataloader import _BaseDataLoaderIter, _DatasetKind
 from torch.utils.data.datapipes.datapipe import IterDataPipe, MapDataPipe
 from transformers import PreTrainedTokenizerFast
 
-from src.objective_curriculum import ObjectiveCurriculum, StackedCollator
+# from src.objective_curriculum import ObjectiveCurriculum, StackedCollator
 from src.data_curriculum.contextualize_collate import context_augmented_collate
 from transformers import DataCollatorForLanguageModeling
 from src.utils.data import base_collate_fn

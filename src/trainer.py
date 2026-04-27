@@ -68,20 +68,20 @@ from .data_curriculum.datasampler import (
     DistributedCurriculumSampler,
 )
 from .data_curriculum.sleep_sampler import SleepSampler
-from .data_curriculum.difficulty_scorer import get_difficulty_scorer
-from .data_curriculum.pacing_fn import get_pacing_fn
+# from .data_curriculum.difficulty_scorer import get_difficulty_scorer
+# from .data_curriculum.pacing_fn import get_pacing_fn
 
-# Curriculum Data Loader (used for both objective and data-driven curriculum)
-from .dataloader import CurriculumDataLoader, SleepDataLoader
+# Sleep Data Loader 
+from .dataloader import SleepDataLoader
 
 # Model Evaluation
 from .evaluator import BlimpEvaluator, FinetuneEvaluator, BabyLMEvaluator
 
 # Objective Curriculum
-from .objective_curriculum import ObjectiveCurriculum
+# from .objective_curriculum import ObjectiveCurriculum
 
 # Tokenization
-from .vocabulary_curriculum.vocabulary_map import get_vocabulary_map
+# from .vocabulary_curriculum.vocabulary_map import get_vocabulary_map
 
 logger = logging.getLogger(__name__)
 objective_cl_logger = logging.getLogger("Objective Curriculum")
