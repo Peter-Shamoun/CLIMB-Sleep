@@ -39,3 +39,5 @@ trainer:
   eval_perplexity: True
   n_eval_samples: 100
   eval_batch_size: 4
+  mask_probability: 0.15
+  unmask_probability: 0

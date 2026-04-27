@@ -53,7 +53,7 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         assert self._num_workers == 0
 
         self.loader = loader
-        self.mlm_config = loader.cfg.units['mlm']
+        self.config = loader.cfg
 
         if isinstance(self._dataset, (IterDataPipe, MapDataPipe)):
             raise NotImplementedError(
@@ -64,7 +64,7 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             sampler=loader.sampler,
             tokenizer=loader.tokenizer,
             mlm=True,
-            mlm_probability=self.mlm_config['optional_kwargs']['mask_probability']
+            mlm_probability=self.config.trainer.mask_probability
         )
         self._dataset_fetcher = _DatasetKind.create_fetcher(
             self._dataset_kind,

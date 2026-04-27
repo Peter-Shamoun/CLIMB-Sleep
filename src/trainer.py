@@ -310,6 +310,7 @@ C
             return SleepDataLoader(
                 dataset=train_dataset,
                 sampler=train_sampler,
+                config=self.hydra_config,
                 tokenizer=self.tokenizer,
                 batch_size=self._train_batch_size,
                 drop_last=self.args.dataloader_drop_last,
