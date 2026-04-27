@@ -323,6 +323,7 @@ C
                      inputs, 
                      override_input_ids=None,
                      override_labels=None,
+                     loss_kwargs=None,
                      **kwargs):
         """
         ~~We compute the loss for each objective unit, and then sum them up.~~
@@ -400,7 +401,7 @@ C
                 indices = inputs['indices'].tolist()
                 losses = per_sample_loss.detach().cpu().tolist()
                 self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
-        loss = cross_entropy(logits, labels)
+        loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
         loss_metrics["loss_mlm"] = total_unit_loss_scalar
