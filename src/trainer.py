@@ -303,6 +303,16 @@ C
                 num_workers=0,
                 pin_memory=self.args.dataloader_pin_memory,
             )
+        else:
+            return DataLoader(
+                dataset=train_dataset,
+                sampler=train_sampler,
+                tokenizer=self.tokenizer,
+                batch_size=self._train_batch_size,
+                drop_last=self.args.dataloader_drop_last,
+                num_workers=0,
+                pin_memory=self.args.dataloader_pin_memory
+            )
 
         assert (
             self.tokenizer is not None
