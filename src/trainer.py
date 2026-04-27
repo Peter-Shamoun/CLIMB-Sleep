@@ -195,7 +195,7 @@ C
         
         # Setting up optimizer and scheduler for task head
         self.mlm_optimizer = AdamW(
-            self._mlm_head.parameters(),
+            self.mlm_head.parameters(),
             lr=1e-3,
         )
 
