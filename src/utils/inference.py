@@ -85,7 +85,7 @@ def compute_trainer_perplexity(
             "reduction": "none",
         },
     )
-    print("LOSS:", loss, loss.shape)
+    # print("LOSS:", loss, loss.shape)
     # loss is a tensor (batch * seq_len, seq_len), where in the second dimension only at most one
     # token should be non-zero (the masked token). We sum over the second dimension to get the
     # loss for each token in each batch
