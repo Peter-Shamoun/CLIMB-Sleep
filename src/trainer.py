@@ -200,7 +200,7 @@ C
         )
 
         self.mlm_scheduler = get_linear_schedule_with_warmup(
-            self.optimizer,
+            self.mlm_optimizer,
             num_warmup_steps=args.warmup_steps,
             num_training_steps=args.max_steps,
         )
