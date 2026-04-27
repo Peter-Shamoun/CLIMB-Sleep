@@ -441,7 +441,7 @@ C
         # ex: at the end of every sleep phase, we could save 5 random samples from replay buffer
         # check CLIMB repo to see more
         return loss
-    def training_step(self, model, inputs):
+    def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
 
         # == SLEEP MECHANISM == #
