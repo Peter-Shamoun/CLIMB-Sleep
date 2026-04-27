@@ -12,6 +12,7 @@ import json
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+from torch.nn.functional import cross_entropy
 from huggingface_hub.hf_api import create_repo
 # from huggingface_hub.repository import Repository
 # from huggingface_hub.utils._errors import HfHubHTTPError
@@ -23,7 +24,14 @@ from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
 # Model Training
-from transformers import PreTrainedTokenizerFast, Trainer, TrainerCallback
+from transformers import (
+    PreTrainedTokenizerFast, 
+    Trainer, 
+    TrainerCallback,
+    DataCollatorForLanguageModeling,
+    RobertaConfig,
+    get_linear_schedule_with_warmup,
+)
 from transformers.utils import is_torch_neuroncore_available
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
 from transformers.trainer_callback import TrainerControl, TrainerState
@@ -38,6 +46,9 @@ from transformers.training_args import ParallelMode, TrainingArguments
 #     get_full_repo_name,
 #     is_torch_neuroncore_available,
 # )
+from transformers.models.roberta_prelayernorm.modeling_roberta_prelayernorm import (
+    RobertaPreLayerNormLMHead,
+)
 
 # Model Loading
 from src.models import load_base_model
@@ -160,7 +171,7 @@ C
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
         # We check that this variable is set in the config file when loading the base model
 
-        hidden_rep_size = hydra_config.model.model_kwargs["hidden_size"]
+        self.hidden_rep_size = hydra_config.model.model_kwargs["hidden_size"]
         if self.sleep_mechanism_cfg:
             logger.info(
                 f"Using sleep mechanism configuration {self.sleep_mechanism_cfg}"
@@ -170,6 +181,16 @@ C
         
         # track gradient steps for checkpointing
         self.global_step = 0
+        
+        # Initialize MLM task head
+        mlm_head_config = RobertaConfig(
+            vocab_size=self.tokenizer.vocab_size,  # type: ignore
+            hidden_size=self.hidden_rep_size
+        )
+
+        self.mlm_head = RobertaPreLayerNormLMHead(mlm_head_config).to(
+            self.args.device
+        )
 
     def _get_train_sampler(self):
         """
@@ -277,7 +298,6 @@ C
                 dataset=train_dataset,
                 sampler=train_sampler,
                 tokenizer=self.tokenizer,
-                # config=self.objective_curriculum_cfg, TODO: Remove obj curr config from SleepDataLoader
                 batch_size=self._train_batch_size,
                 drop_last=self.args.dataloader_drop_last,
                 num_workers=0,
@@ -290,7 +310,8 @@ C
 
     def compute_loss(self, model, inputs, **kwargs):
         """
-        We compute the loss for each objective unit, and then sum them up.
+        ~~We compute the loss for each objective unit, and then sum them up.~~
+        We track the loss of each sample during WAKE phases to add to the replay buffer.
         """
 
         total_loss = torch.tensor(0.0).to(self.args.device)
@@ -316,38 +337,57 @@ C
             and hasattr(self.callback_handler.train_dataloader.sampler, 'phase')
             and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
         )
-        # logger.info(f"Track per-sample loss: {track_per_sample}")
+        logger.info(f"Track per-sample loss: {track_per_sample}")
         # logger.info(f"Units: {self.objective_curriculum[self.state.global_step].items()}")
-        for unit_name, unit in self.objective_curriculum[
-            self.state.global_step
-        ].items():
-            if track_per_sample:
-                unit_loss, per_sample_losses = unit.compute_loss(
-                    model, inputs, return_per_sample_loss=True
-                )
-                # print("Computed per-sample loss")
-                # logger.info(f"inputs: {inputs}")
-                # Add per-sample losses to the replay buffer
-                if "indices" in inputs:
-                    indices = inputs["indices"].tolist()
-                    losses = per_sample_losses.detach().cpu().tolist()
-                    self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
-                    # logger.info(f"Sleep Sampler candidates size: {len(self.callback_handler.train_dataloader.sampler.wake_candidates)}")
-            else:
-                unit_loss = unit.compute_loss(model, inputs)
+        # for unit_name, unit in self.objective_curriculum[
+        #     self.state.global_step
+        # ].items():
+        #     if track_per_sample:
+        #         unit_loss, per_sample_losses = unit.compute_loss(
+        #             model, inputs, return_per_sample_loss=True
+        #         )
+        #         # Add per-sample losses to the replay buffer
+        #         if "indices" in inputs:
+        #             indices = inputs["indices"].tolist()
+        #             losses = per_sample_losses.detach().cpu().tolist()
+        #             self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
+        #     else:
+        #         unit_loss = unit.compute_loss(model, inputs)
 
-            # averaging over the processes
-            total_unit_loss_scalar = self._nested_gather(unit_loss).mean().item()  # type: ignore
-            loss_metrics[f"loss_{unit_name}"] = total_unit_loss_scalar
-            if self.sleep_mechanism_cfg:
-                curr_phase = self.callback_handler.train_dataloader.sampler.phase
-                loss_metrics[f"loss_{unit_name}_{curr_phase}"] = total_unit_loss_scalar
-
-            total_loss += unit_loss
-
+        #     total_loss += unit_loss
+        
+        base_model_outputs = model(
+            input_ids=inputs['input_ids'],
+            attention_mask=inputs["attention_mask"]
+            if "attention_mask" in inputs
+            else None,
+        )
+        base_model_hidden_states = base_model_outputs[0]
+        logits = self.task_head(base_model_hidden_states).transpose(-1, -2)
+        labels = inputs['labels']
+        
+        # Compute the loss
+        if track_per_sample:
+            # Compute per-sample loss for sleep mechanism replay buffer
+            per_sample_loss = cross_entropy(logits, labels, reduction='none')
+            per_sample_loss = per_sample_loss.mean(dim=-1) # avgs across samples
+            # loss = per_sample_loss.mean()
+            # Add per-sample loss to sampler
+            if "indices" in inputs:
+                indices = inputs['indices'].tolist()
+                losses = per_sample_loss.detach().cpu().tolist()
+                self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
+        loss = cross_entropy(logits, labels)
+        # averaging over the processes
+        total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
+        loss_metrics["loss_mlm"] = total_unit_loss_scalar
+        if self.sleep_mechanism_cfg:
+            curr_phase = self.callback_handler.train_dataloader.sampler.phase
+            loss_metrics[f"loss_mlm_{curr_phase}"] = total_unit_loss_scalar
+            
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
-        # incrementing here ensures we trackl one step per gradient update
+        # incrementing here ensures we track one step per gradient update
         self.global_step += 1
         self.phase_steps += 1
         
@@ -358,8 +398,11 @@ C
 
             self.log(loss_metrics)
 
-            ### --- LOGGING OUT CURRICULUM LEARNING RELATED METRICS AND SAMPLES --- ###
-        return total_loss
+        ### --- LOGGING OUT REPLAY METRICS AND SAMPLES --- ###
+        # TODO: This is where saving the replay table would go
+        # ex: at the end of every sleep phase, we could save 5 random samples from replay buffer
+        # check CLIMB repo to see more
+        return loss
     def training_step(self, model, inputs):
         loss = super().training_step(model, inputs)
 
