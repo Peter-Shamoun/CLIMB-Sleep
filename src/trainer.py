@@ -318,7 +318,12 @@ C
             self.tokenizer is not None
         ), "Tokenizer is not set. Please set the tokenizer before calling the train method."
 
-    def compute_loss(self, model, inputs, **kwargs):
+    def compute_loss(self, 
+                     model, 
+                     inputs, 
+                     override_input_ids=None,
+                     override_labels=None,
+                     **kwargs):
         """
         ~~We compute the loss for each objective unit, and then sum them up.~~
         We track the loss of each sample during WAKE phases to add to the replay buffer.
@@ -365,16 +370,24 @@ C
         #         unit_loss = unit.compute_loss(model, inputs)
 
         #     total_loss += unit_loss
-        
+        input_ids = (
+            override_input_ids
+            if override_input_ids is not None
+            else inputs["input_ids"]
+        )
         base_model_outputs = model(
-            input_ids=inputs['input_ids'],
+            input_ids=input_ids,
             attention_mask=inputs["attention_mask"]
             if "attention_mask" in inputs
             else None,
         )
         base_model_hidden_states = base_model_outputs[0]
         logits = self.task_head(base_model_hidden_states).transpose(-1, -2)
-        labels = inputs['labels']
+        labels = (
+            override_labels
+            if override_labels is not None
+            else inputs["labels"]
+        )
         
         # Compute the loss
         if track_per_sample:
