@@ -382,7 +382,7 @@ C
             else None,
         )
         base_model_hidden_states = base_model_outputs[0]
-        logits = self.task_head(base_model_hidden_states).transpose(-1, -2)
+        logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
             override_labels
             if override_labels is not None
