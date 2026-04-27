@@ -201,8 +201,8 @@ C
 
         self.mlm_scheduler = get_linear_schedule_with_warmup(
             self.optimizer,
-            num_warmup_steps=self.task_num_steps // 10,
-            num_training_steps=self.task_num_steps,
+            num_warmup_steps=hydra_config.trainer.num_warmup_steps // 10,
+            num_training_steps=hydra_config.trainer.max_training_steps,
         )
 
     def _get_train_sampler(self):
