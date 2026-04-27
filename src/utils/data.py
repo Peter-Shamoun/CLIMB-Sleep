@@ -16,6 +16,7 @@ from src.config import BabyLMConfig
 def base_collate_fn(_samples: List[Dict[str, List[Tuple[int, float]]]]):
     joined_batch = defaultdict(list)
     for sample in _samples:
+        print("SAMPLE:", sample)
         for key, val in sample.items():
             joined_batch[key].append(torch.tensor(val))
 
