@@ -718,7 +718,7 @@ C
 
             # self.objective_curriculum.save(output_dir=task_heads_dir)
             torch.save(
-                unwrap_model(self.task_head).state_dict(),
+                unwrap_model(self.mlm_head).state_dict(),
                 os.path.join(output_dir, f"mlm_task_head.pt"),
             )
 
