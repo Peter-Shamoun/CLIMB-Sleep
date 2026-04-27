@@ -76,11 +76,11 @@ def compute_trainer_perplexity(
 
     # NOTE: The 'mlm' unit is always in the objective curriculum
     # (this is checked by ObjectiveCurriculum.__init__)
-    loss = trainer.objective_curriculum.units["mlm"].compute_loss(
+    loss = trainer.compute_loss(
         trainer.model,
         {},  # We don't provide a standard batch of data
         override_input_ids=masked_input,
-        override_lables=labels,
+        override_labels=labels,
         loss_kwargs={
             "reduction": "none",
         },
