@@ -13,6 +13,7 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.functional import cross_entropy
+from torch.optim import AdamW
 from huggingface_hub.hf_api import create_repo
 # from huggingface_hub.repository import Repository
 # from huggingface_hub.utils._errors import HfHubHTTPError
@@ -191,6 +192,18 @@ C
         self.mlm_head = RobertaPreLayerNormLMHead(mlm_head_config).to(
             self.args.device
         )
+        
+        # Setting up optimizer and scheduler for task head
+        self.mlm_optimizer = AdamW(
+            self._mlm_head.parameters(),
+            lr=1e-3,
+        )
+
+        self.mlm_scheduler = get_linear_schedule_with_warmup(
+            self.optimizer,
+            num_warmup_steps=self.task_num_steps // 10,
+            num_training_steps=self.task_num_steps,
+        )
 
     def _get_train_sampler(self):
         """
@@ -353,7 +366,7 @@ C
             and hasattr(self.callback_handler.train_dataloader.sampler, 'phase')
             and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
         )
-        logger.info(f"Track per-sample loss: {track_per_sample}")
+        # logger.info(f"Track per-sample loss: {track_per_sample}")
         # logger.info(f"Units: {self.objective_curriculum[self.state.global_step].items()}")
         # for unit_name, unit in self.objective_curriculum[
         #     self.state.global_step
@@ -665,7 +678,7 @@ C
             unwrap_model(self.model.base_model),
         )
         lm_model.lm_head = unwrap_model(
-            self.objective_curriculum.units["mlm"].task_head
+            self.mlm_head
         )
 
         return lm_model
@@ -703,13 +716,48 @@ C
 
             self.tokenizer.save_pretrained(mlm_model_dir)
 
-            self.objective_curriculum.save(output_dir=task_heads_dir)
+            # self.objective_curriculum.save(output_dir=task_heads_dir)
+            torch.save(
+                unwrap_model(self.task_head).state_dict(),
+                os.path.join(output_dir, f"mlm_task_head.pt"),
+            )
+
+            torch.save(
+                self.optimizer.state_dict(),
+                os.path.join(output_dir, f"mlm_optimizer.pt"),
+            )
+            torch.save(
+                self.scheduler.state_dict(),
+                os.path.join(output_dir, f"mlm_scheduler.pt"),
+            )
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
         super()._load_from_checkpoint(resume_from_checkpoint, model=model)
 
         task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
-        self.objective_curriculum.load(task_head_dir)
+        # self.objective_curriculum.load(task_head_dir)
+        self.mlm_head.load_state_dict(
+            self._possibly_wrap_state_dict(
+                torch.load(
+                    os.path.join(
+                        task_head_dir, f"{self.task_unit_name}_task_head.pt"
+                    ),
+                    map_location=self.device,
+                )
+            )
+        )
+        self.optimizer.load_state_dict(
+            torch.load(
+                os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
+                map_location=self.device,
+            )
+        )
+        self.scheduler.load_state_dict(
+            torch.load(
+                os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
+                map_location=self.device,
+            )
+        )
 
         # load step count
         step_file = os.path.join(resume_from_checkpoint, "trainer_state.json")
@@ -726,7 +774,28 @@ C
         task_head_dir = os.path.join(
             self.state.best_model_checkpoint, "task_heads"
         )
-        self.objective_curriculum.load(task_head_dir)
+        self.mlm_head.load_state_dict(
+            self._possibly_wrap_state_dict(
+                torch.load(
+                    os.path.join(
+                        task_head_dir, f"{self.task_unit_name}_task_head.pt"
+                    ),
+                    map_location=self.device,
+                )
+            )
+        )
+        self.optimizer.load_state_dict(
+            torch.load(
+                os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
+                map_location=self.device,
+            )
+        )
+        self.scheduler.load_state_dict(
+            torch.load(
+                os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
+                map_location=self.device,
+            )
+        )
 
     def _wrap_model(self, model):
         if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
