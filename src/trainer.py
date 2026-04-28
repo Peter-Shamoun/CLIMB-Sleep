@@ -338,6 +338,7 @@ C
                      override_input_ids=None,
                      override_labels=None,
                      loss_kwargs=None,
+                     inference=False,
                      **kwargs):
         """
         ~~We compute the loss for each objective unit, and then sum them up.~~
@@ -419,7 +420,7 @@ C
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
         loss_metrics["loss_mlm"] = total_unit_loss_scalar
-        if self.sleep_mechanism_cfg and track_per_sample:
+        if self.sleep_mechanism_cfg and not inference:
             curr_phase = self.callback_handler.train_dataloader.sampler.phase
             loss_metrics[f"loss_mlm_{curr_phase}"] = total_unit_loss_scalar
             

@@ -84,6 +84,7 @@ def compute_trainer_perplexity(
         loss_kwargs={
             "reduction": "none",
         },
+        inference=True,
     )
     # print("LOSS:", loss, loss.shape)
     # loss is a tensor (batch * seq_len, seq_len), where in the second dimension only at most one
