@@ -175,7 +175,7 @@ C
                         self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
                         len(self.train_dataset) // self.args.per_device_train_batch_size
                         ))
-                / self.sleep_mechanism_cfg.n_phases
+                // self.sleep_mechanism_cfg.n_phases
             )
         self.phase_steps = 0
 
