@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Union
 import json
 
 import torch
+from torch import Tensor, device
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.functional import cross_entropy
@@ -167,6 +168,15 @@ C
         super().__init__(args=args, **kwargs)
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
+        if self.sleep_mechanism_cfg:
+            self.sleep_max_steps = (
+                (args.max_steps
+                    - min(
+                        self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
+                        len(self.train_dataset) // self.args.per_device_train_batch_size
+                        ))
+                / self.sleep_mechanism_cfg.n_phases
+            )
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
@@ -345,8 +355,6 @@ C
         We track the loss of each sample during WAKE phases to add to the replay buffer.
         """
 
-        total_loss = torch.tensor(0.0).to(self.args.device)
-
         loss_metrics = {}
 
         if self.state.global_step >= self.args.max_steps:
@@ -442,6 +450,7 @@ C
         # ex: at the end of every sleep phase, we could save 5 random samples from replay buffer
         # check CLIMB repo to see more
         return loss
+    
     def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
 
@@ -450,16 +459,16 @@ C
             # if wake phase over, reset phase steps, eval, then switch
             sampler = self.callback_handler.train_dataloader.sampler
             phase = sampler.phase
-            next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
-            phase_maxes = {
-                "WAKE": min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps), 
-                "SLEEP": self.sleep_mechanism_cfg.sleep_max_steps
-            }
-            if self.phase_steps >= phase_maxes[phase]:
+            phase_max = (min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps) 
+                         if phase == 'WAKE' 
+                         else self.sleep_max_steps)
+
+            if self.phase_steps >= phase_max:
                 if (phase == "WAKE"
                 and (self.sleep_mechanism_cfg.wake_block_steps 
                      > sampler.wake_max_steps)):
                     logger.info("WARNING: The selected WAKE phase max steps exceeds the size of the current fold. Ending WAKE phase early.")
+                next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
                 self._swap_phase(sampler, phase, next_phase)
         
         return loss
@@ -833,6 +842,21 @@ C
                 )
 
         return model
+
+    def _possibly_wrap_state_dict(
+        self, state_dict: Dict[str, Tensor]
+    ) -> Dict[str, Tensor]:
+        """
+        Wraps the state dict in a DistributedDataParallel state dict if the task unit is
+        distributed.
+        """
+
+        if self.local_rank != -1:
+            state_dict = {
+                f"module.{key}": value for key, value in state_dict.items()
+            }
+
+        return state_dict
         
     def train(self, *args, resume_from_checkpoint=None, **kwargs):
         """
