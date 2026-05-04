@@ -797,7 +797,7 @@ C
             self._possibly_wrap_state_dict(
                 torch.load(
                     os.path.join(
-                        task_head_dir, f"{self.task_unit_name}_task_head.pt"
+                        task_head_dir, f"mlm_task_head.pt"
                     ),
                     map_location=self.device,
                 )
@@ -805,13 +805,13 @@ C
         )
         self.mlm_optimizer.load_state_dict(
             torch.load(
-                os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
+                os.path.join(task_head_dir, f"mlm_optimizer.pt"),
                 map_location=self.device,
             )
         )
         self.mlm_scheduler.load_state_dict(
             torch.load(
-                os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
+                os.path.join(task_head_dir, f"mlm_scheduler.pt"),
                 map_location=self.device,
             )
         )
