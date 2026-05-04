@@ -761,20 +761,20 @@ C
                     os.path.join(
                         task_head_dir, f"{self.task_unit_name}_task_head.pt"
                     ),
-                    map_location=self.device,
+                    map_location=self.args.device,
                 )
             )
         )
         self.mlm_optimizer.load_state_dict(
             torch.load(
                 os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
-                map_location=self.device,
+                map_location=self.args.device,
             )
         )
         self.mlm_scheduler.load_state_dict(
             torch.load(
                 os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
-                map_location=self.device,
+                map_location=self.args.device,
             )
         )
 
@@ -799,20 +799,20 @@ C
                     os.path.join(
                         task_head_dir, f"mlm_task_head.pt"
                     ),
-                    map_location=self.device,
+                    map_location=self.args.device,
                 )
             )
         )
         self.mlm_optimizer.load_state_dict(
             torch.load(
                 os.path.join(task_head_dir, f"mlm_optimizer.pt"),
-                map_location=self.device,
+                map_location=self.args.device,
             )
         )
         self.mlm_scheduler.load_state_dict(
             torch.load(
                 os.path.join(task_head_dir, f"mlm_scheduler.pt"),
-                map_location=self.device,
+                map_location=self.args.device,
             )
         )
 
