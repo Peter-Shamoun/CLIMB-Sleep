@@ -357,7 +357,7 @@ C
 
         loss_metrics = {}
 
-        if self.state.global_step >= self.args.max_steps:
+        if not inference and self.state.global_step >= self.args.max_steps:
             raise Exception(
                 """
                 Reached max_steps already - training should have stopped.
@@ -435,8 +435,9 @@ C
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
         # incrementing here ensures we track one step per gradient update
-        self.global_step += 1
-        self.phase_steps += 1
+        if not inference:
+            self.global_step += 1
+            self.phase_steps += 1
         
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
