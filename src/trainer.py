@@ -177,6 +177,12 @@ C
                         ))
                 // self.sleep_mechanism_cfg.n_phases
             )
+            if self.sleep_mechanism_cfg.sleep_max_steps < 1:
+                logger.info(f"Too few steps for training! Min steps: {min(
+                        self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
+                        len(self.train_dataset) // self.args.per_device_train_batch_size
+                        ) + self.sleep_mechanism_cfg.n_phases}")
+                raise ValueError("Too few steps for training")
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
