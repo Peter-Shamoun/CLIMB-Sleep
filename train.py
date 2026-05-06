@@ -198,6 +198,7 @@ def main(cfg: BabyLMConfig):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
+        sleep_table=sleep_table
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
     if not cfg.experiment.resume_checkpoint_path:
