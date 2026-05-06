@@ -64,14 +64,8 @@ from wandb import Table
 # typing imports
 from .config import BabyLMConfig
 
-# Data Sampling and Data Curriculum
-from .data_curriculum.datasampler import (
-    CurriculumSampler,
-    DistributedCurriculumSampler,
-)
+# Sleep Sampling
 from .data_curriculum.sleep_sampler import SleepSampler
-# from .data_curriculum.difficulty_scorer import get_difficulty_scorer
-# from .data_curriculum.pacing_fn import get_pacing_fn
 
 # Sleep Data Loader 
 from .dataloader import SleepDataLoader
@@ -79,54 +73,7 @@ from .dataloader import SleepDataLoader
 # Model Evaluation
 from .evaluator import BlimpEvaluator, FinetuneEvaluator, BabyLMEvaluator
 
-# Objective Curriculum
-# from .objective_curriculum import ObjectiveCurriculum
-
-# Tokenization
-# from .vocabulary_curriculum.vocabulary_map import get_vocabulary_map
-
 logger = logging.getLogger(__name__)
-objective_cl_logger = logging.getLogger("Objective Curriculum")
-data_cl_logger = logging.getLogger("Data Curriculum")
-
-
-class CurriculumLearningCallback(TrainerCallback):
-    """
-    A TrainerCallback that updates the data sampler and data collator with the current global step of training.
-    """
-
-    def on_train_begin(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        train_dataloader,
-        **kwargs,
-    ):
-        train_dataloader.global_stepnum = state.global_step
-
-    def on_step_end(self, *_, train_dataloader, **kwargs) -> None:
-        if isinstance(
-            train_dataloader.sampler,
-            (CurriculumSampler, DistributedCurriculumSampler),
-        ):
-            train_dataloader.sampler.global_stepnum += 1
-        # Note: SleepSampler doesn't use global_stepnum, so we skip it
-
-        train_dataloader.global_stepnum += 1
-
-
-class TaskTrainerCallback(TrainerCallback):
-    """
-    A TrainerCallback that handles updating the task heads of the model.
-    """
-
-    def __init__(self, objective_curriculum) -> None:
-        self.objective_curriculum = objective_curriculum
-
-    def on_step_end(self, args, state, control, **kwargs) -> None:
-        self.objective_curriculum.optimizer_step(state.global_step)
-
 
 class CustomTrainer(Trainer):
     def __init__(
@@ -293,7 +240,7 @@ C
             logs["epoch"] = round(self.state.epoch, 2)
 
         output = {**logs, **{"step": self.state.global_step}}
-        if "curriculum_learning_table" not in logs:
+        if "sleep_table" not in logs:
             # NOTE: Everything in state will be serialized to a json file when we save
             # a checkpoint - alas a wandb.Table is not
             self.state.log_history.append(output)
@@ -385,24 +332,6 @@ C
             and hasattr(self.callback_handler.train_dataloader.sampler, 'phase')
             and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
         )
-        # logger.info(f"Track per-sample loss: {track_per_sample}")
-        # logger.info(f"Units: {self.objective_curriculum[self.state.global_step].items()}")
-        # for unit_name, unit in self.objective_curriculum[
-        #     self.state.global_step
-        # ].items():
-        #     if track_per_sample:
-        #         unit_loss, per_sample_losses = unit.compute_loss(
-        #             model, inputs, return_per_sample_loss=True
-        #         )
-        #         # Add per-sample losses to the replay buffer
-        #         if "indices" in inputs:
-        #             indices = inputs["indices"].tolist()
-        #             losses = per_sample_losses.detach().cpu().tolist()
-        #             self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
-        #     else:
-        #         unit_loss = unit.compute_loss(model, inputs)
-
-        #     total_loss += unit_loss
         input_ids = (
             override_input_ids
             if override_input_ids is not None
@@ -715,7 +644,7 @@ C
 
             # Saving should be done only on the main process
 
-            # NOTE: We need to save the objective curriculum state as well
+            # NOTE: We need to save the objective mlm head state as well
             output_dir = (
                 output_dir if output_dir is not None else self.args.output_dir
             )
@@ -737,7 +666,6 @@ C
 
             self.tokenizer.save_pretrained(mlm_model_dir)
 
-            # self.objective_curriculum.save(output_dir=task_heads_dir)
             torch.save(
                 unwrap_model(self.mlm_head).state_dict(),
                 os.path.join(output_dir, f"mlm_task_head.pt"),
@@ -756,7 +684,6 @@ C
         super()._load_from_checkpoint(resume_from_checkpoint, model=model)
 
         task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
-        # self.objective_curriculum.load(task_head_dir)
         self.mlm_head.load_state_dict(
             self._possibly_wrap_state_dict(
                 torch.load(
@@ -847,7 +774,7 @@ C
                     output_device=self.args.local_rank
                     if self.args._n_gpu != 0
                     else None,
-                    broadcast_buffers=False,  # NOTE: Important for DDP with obj. curriculum
+                    broadcast_buffers=False,
                     **kwargs,
                 )
 
@@ -887,6 +814,10 @@ C
             logger.info("Contextualize?: %s", sampler.contextualize_sleep)
             logger.info("num candidates: %d", len(sampler.wake_candidates))
             logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
+        else:
+            # Log sleep info from this sleep phase
+            pass
+            
             
         logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
         logger.info("Rebuilding train dataloader...")
