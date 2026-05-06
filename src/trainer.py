@@ -668,16 +668,16 @@ C
 
             torch.save(
                 unwrap_model(self.mlm_head).state_dict(),
-                os.path.join(output_dir, f"mlm_task_head.pt"),
+                os.path.join(task_heads_dir, f"mlm_task_head.pt"),
             )
 
             torch.save(
                 self.mlm_optimizer.state_dict(),
-                os.path.join(output_dir, f"mlm_optimizer.pt"),
+                os.path.join(task_heads_dir, f"mlm_optimizer.pt"),
             )
             torch.save(
                 self.mlm_scheduler.state_dict(),
-                os.path.join(output_dir, f"mlm_scheduler.pt"),
+                os.path.join(task_heads_dir, f"mlm_scheduler.pt"),
             )
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
