@@ -127,8 +127,9 @@ def main(cfg: BabyLMConfig):
                     columns=[
                         "global_step",
                         "phase_step",
+                        "phase_num",
                         "replay_samples",
-                        
+                        # "losses",
                     ]
                 )
 

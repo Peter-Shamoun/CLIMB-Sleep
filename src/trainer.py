@@ -802,22 +802,47 @@ C
         self.phase_steps = 0
         return super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs) #CHANGED from super().super().train to super().train
     
-    def _swap_phase(self, sampler, phase, next_phase):
+    def _swap_phase(self, 
+                    sampler: SleepSampler,
+                    phase:str, 
+                    next_phase:str):
         logger.info("Ending %s phase...", phase)
         self.phase_steps = 0
         # eval before sleep
         logger.info("Running evaluation before %s phase...", next_phase)
         self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
+        
+        if next_phase == "WAKE":
+            # On switching to wake phase, build and log the sleep table
+            logger.info("Logging replay samples...")
+            
+            samples, losses = list(zip(*sampler.get_replay_samples(10)))
+            sample_ids = [samp["input_ids"] for samp in samples]
+            sample_texts = "\n\n".join(
+                [f"{i}: {self.tokenizer.decode(ids)}" for i, ids in enumerate(sample_ids)]
+            )
+            
+            self.sleep_table.add_data(
+                self.global_step, # global_step
+                self.phase_steps, # phase_step
+                sampler.curr_fold, # phase_num
+                sample_texts, # replay_samples
+                # losses # losses
+            )
+            _sleep_table = Table(
+                columns=self.sleep_table.columns,
+                data=self.sleep_table.data
+            )
+            self.log({
+                "sleep_table": _sleep_table
+            })
+        
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
         if next_phase == "SLEEP":
             logger.info("Contextualize?: %s", sampler.contextualize_sleep)
             logger.info("num candidates: %d", len(sampler.wake_candidates))
             logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
-        else:
-            # Log sleep info from this sleep phase
-            pass
-            
             
         logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
         logger.info("Rebuilding train dataloader...")

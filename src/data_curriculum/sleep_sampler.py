@@ -223,10 +223,20 @@ class SleepSampler(Sampler):
             self.wake_candidates[idx] = prob * self.decay_rate
     
     def get_replay_samples(self, num_samples=-1):
+        """ Returns a random selection of samples from the replay buffer for analysis.
+
+        Args:
+            num_samples (int, optional): Number of samples to return. Defaults to -1: return entire buffer.
+
+        Returns:
+            List(Tuple(Dict, float)): List of samples and losses. Samples 
+                contain lists of ints with keys input_ids, special_tokens_mask,
+                and attention_mask.
+        """
         if len(self.replay_buffer) < 1:
             return None
         if num_samples < 0:
-            num_samples = len(self.replay_buffer)
+            return self.replay_buffer.copy()
         return_idxs = list(random.choice(self.replay_buffer, num_samples))
-        result = [self.dataset[int(idx)] for idx in return_idxs]
+        result = [(self.dataset[int(idx)], self.wake_candidates[idx]) for idx in return_idxs]
         return result
