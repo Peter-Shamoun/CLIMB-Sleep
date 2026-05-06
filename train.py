@@ -95,6 +95,7 @@ def main(cfg: BabyLMConfig):
     if cfg.experiment.offline_run:
         os.environ["WANDB_DISABLED"] = "true"
         os.environ["WANDB_MODE"] = "disabled"
+        sleep_table = None
     else:
         # These environment variables get picked up by Trainer
         os.environ["WANDB_PROJECT"] = cfg.experiment.group
@@ -121,6 +122,15 @@ def main(cfg: BabyLMConfig):
                 id=cfg.experiment.resume_run_id,
                 resume="allow",
             )
+            if cfg.sleep_mechanism:
+                sleep_table = wandb.Table(
+                    columns=[
+                        "global_step",
+                        "phase_step",
+                        "replay_samples",
+                        
+                    ]
+                )
 
     # Set up training arguments
     # if cfg.sleep_mechanism:

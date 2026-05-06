@@ -1,4 +1,4 @@
-import random
+from numpy import random
 import math
 from typing import Iterator, List, Tuple, Sequence
 
@@ -206,7 +206,9 @@ class SleepSampler(Sampler):
         elif self.replay_strategy == "random":
             # Randomly sample from wake candidates
             candidate_indices = list(self.wake_candidates.keys())
-            self.replay_buffer = random.sample(candidate_indices, num_replay)
+            self.replay_buffer = list(random.choice(candidate_indices,
+                                               size=num_replay,
+                                               replace=False))
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()
     
@@ -219,4 +221,10 @@ class SleepSampler(Sampler):
     def decay_wake_candidates(self):
         for idx, prob in self.wake_candidates.items():
             self.wake_candidates[idx] = prob * self.decay_rate
-        
+    
+    def get_replay_samples(self, num_samples=-1):
+        if num_samples < 0:
+            num_samples = len(self.replay_buffer)
+        return_idxs = list(random.choice(self.replay_buffer, num_samples))
+        result = [self.dataset[idx] for idx in return_idxs]
+        return result

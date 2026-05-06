@@ -135,6 +135,7 @@ class CustomTrainer(Trainer):
         dry_run: bool,
         args: TrainingArguments,
         tokenizer: PreTrainedTokenizerFast,
+        sleep_table: Table,
         **kwargs,
     ) -> None:
         """
@@ -164,6 +165,7 @@ C
         self.eval_glue = hydra_config.trainer.eval_glue
         self.eval_msgs = hydra_config.trainer.eval_msgs
         self.eval_perplexity = hydra_config.trainer.eval_perplexity
+        self.sleep_table = sleep_table
 
         super().__init__(args=args, **kwargs)
 
