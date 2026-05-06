@@ -123,23 +123,20 @@ def main(cfg: BabyLMConfig):
             )
 
     # Set up training arguments
-    # TODO: If we are using wandb sweeps, note that we will need to think about how we store/
-    # initialize the name of the current experiment so that it doesn't interfere with the name
-    # of other experiments, and also so that we can store checkpoints of that run on HF hub;
-    # alternatively maybe we use ray tune which is natively supported by Trainer
-    if cfg.sleep_mechanism:
-        theoretical_max_steps = int((cfg.sleep_mechanism.wake_block_steps 
-                                + cfg.sleep_mechanism.sleep_max_steps) 
-                                * cfg.sleep_mechanism.n_phases)
-        empirical_max_steps = int((len(train_dataset) 
-                                   // cfg.trainer.batch_size)
-                                  + (cfg.sleep_mechanism.sleep_max_steps 
-                                     * cfg.sleep_mechanism.n_phases))
-        logger.info("Theretical max steps: %d", theoretical_max_steps)
-        logger.info("Empirical max steps: %d", empirical_max_steps)
-        max_training_steps = min(theoretical_max_steps, empirical_max_steps)
-    else:
-        max_training_steps = cfg.trainer.max_training_steps
+    # if cfg.sleep_mechanism:
+    #     theoretical_max_steps = int((cfg.sleep_mechanism.wake_block_steps 
+    #                             + cfg.sleep_mechanism.sleep_max_steps) 
+    #                             * cfg.sleep_mechanism.n_phases)
+    #     empirical_max_steps = int((len(train_dataset) 
+    #                                // cfg.trainer.batch_size)
+    #                               + (cfg.sleep_mechanism.sleep_max_steps 
+    #                                  * cfg.sleep_mechanism.n_phases))
+    #     logger.info("Theretical max steps: %d", theoretical_max_steps)
+    #     logger.info("Empirical max steps: %d", empirical_max_steps)
+    #     max_training_steps = min(theoretical_max_steps, empirical_max_steps)
+    # else:
+    #     max_training_steps = cfg.trainer.max_training_steps
+    max_training_steps = cfg.trainer.max_training_steps
         
     logging_steps = (max_training_steps 
                      // (100 if cfg.experiment.dry_run else 1000))

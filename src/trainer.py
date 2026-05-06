@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Union
 import json
 
 import torch
+from torch import Tensor, device
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.functional import cross_entropy
@@ -167,6 +168,22 @@ C
         super().__init__(args=args, **kwargs)
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
+        if self.sleep_mechanism_cfg:
+            self.sleep_mechanism_cfg.sleep_max_steps = (
+                (args.max_steps
+                    - min(
+                        self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
+                        len(self.train_dataset) // self.args.per_device_train_batch_size
+                        ))
+                // self.sleep_mechanism_cfg.n_phases
+            )
+            if self.sleep_mechanism_cfg.sleep_max_steps < 1:
+                min_steps = (min(
+                    self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
+                    len(self.train_dataset) // self.args.per_device_train_batch_size) 
+                             + self.sleep_mechanism_cfg.n_phases)
+                logger.info("Too few steps for training! Min steps: %d" % min_steps)
+                raise ValueError("Too few steps for training! Min steps: %d" % min_steps")
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
@@ -345,11 +362,9 @@ C
         We track the loss of each sample during WAKE phases to add to the replay buffer.
         """
 
-        total_loss = torch.tensor(0.0).to(self.args.device)
-
         loss_metrics = {}
 
-        if self.state.global_step >= self.args.max_steps:
+        if not inference and self.state.global_step >= self.args.max_steps:
             raise Exception(
                 """
                 Reached max_steps already - training should have stopped.
@@ -427,8 +442,9 @@ C
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
         # incrementing here ensures we track one step per gradient update
-        self.global_step += 1
-        self.phase_steps += 1
+        if not inference:
+            self.global_step += 1
+            self.phase_steps += 1
         
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
@@ -442,6 +458,7 @@ C
         # ex: at the end of every sleep phase, we could save 5 random samples from replay buffer
         # check CLIMB repo to see more
         return loss
+    
     def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
 
@@ -450,16 +467,16 @@ C
             # if wake phase over, reset phase steps, eval, then switch
             sampler = self.callback_handler.train_dataloader.sampler
             phase = sampler.phase
-            next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
-            phase_maxes = {
-                "WAKE": min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps), 
-                "SLEEP": self.sleep_mechanism_cfg.sleep_max_steps
-            }
-            if self.phase_steps >= phase_maxes[phase]:
+            phase_max = (min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps) 
+                         if phase == 'WAKE' 
+                         else self.sleep_mechanism_cfg.sleep_max_steps)
+
+            if self.phase_steps >= phase_max:
                 if (phase == "WAKE"
                 and (self.sleep_mechanism_cfg.wake_block_steps 
                      > sampler.wake_max_steps)):
                     logger.info("WARNING: The selected WAKE phase max steps exceeds the size of the current fold. Ending WAKE phase early.")
+                next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
                 self._swap_phase(sampler, phase, next_phase)
         
         return loss
@@ -744,20 +761,20 @@ C
                     os.path.join(
                         task_head_dir, f"{self.task_unit_name}_task_head.pt"
                     ),
-                    map_location=self.device,
+                    map_location=self.args.device,
                 )
             )
         )
         self.mlm_optimizer.load_state_dict(
             torch.load(
                 os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
-                map_location=self.device,
+                map_location=self.args.device,
             )
         )
         self.mlm_scheduler.load_state_dict(
             torch.load(
                 os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
-                map_location=self.device,
+                map_location=self.args.device,
             )
         )
 
@@ -780,22 +797,22 @@ C
             self._possibly_wrap_state_dict(
                 torch.load(
                     os.path.join(
-                        task_head_dir, f"{self.task_unit_name}_task_head.pt"
+                        task_head_dir, f"mlm_task_head.pt"
                     ),
-                    map_location=self.device,
+                    map_location=self.args.device,
                 )
             )
         )
         self.mlm_optimizer.load_state_dict(
             torch.load(
-                os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
-                map_location=self.device,
+                os.path.join(task_head_dir, f"mlm_optimizer.pt"),
+                map_location=self.args.device,
             )
         )
         self.mlm_scheduler.load_state_dict(
             torch.load(
-                os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
-                map_location=self.device,
+                os.path.join(task_head_dir, f"mlm_scheduler.pt"),
+                map_location=self.args.device,
             )
         )
 
@@ -833,6 +850,21 @@ C
                 )
 
         return model
+
+    def _possibly_wrap_state_dict(
+        self, state_dict: Dict[str, Tensor]
+    ) -> Dict[str, Tensor]:
+        """
+        Wraps the state dict in a DistributedDataParallel state dict if the task unit is
+        distributed.
+        """
+
+        if self.local_rank != -1:
+            state_dict = {
+                f"module.{key}": value for key, value in state_dict.items()
+            }
+
+        return state_dict
         
     def train(self, *args, resume_from_checkpoint=None, **kwargs):
         """
