@@ -183,7 +183,7 @@ C
                     len(self.train_dataset) // self.args.per_device_train_batch_size) 
                              + self.sleep_mechanism_cfg.n_phases)
                 logger.info("Too few steps for training! Min steps: %d" % min_steps)
-                raise ValueError("Too few steps for training")
+                raise ValueError("Too few steps for training! Min steps: %d" % min_steps")
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
