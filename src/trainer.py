@@ -287,7 +287,6 @@ C
             return DataLoader(
                 dataset=train_dataset,
                 sampler=train_sampler,
-                tokenizer=self.tokenizer,
                 batch_size=self._train_batch_size,
                 drop_last=self.args.dataloader_drop_last,
                 num_workers=0,
@@ -685,13 +684,11 @@ C
 
         task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
         self.mlm_head.load_state_dict(
-            self._possibly_wrap_state_dict(
-                torch.load(
-                    os.path.join(
-                        task_head_dir, f"{self.task_unit_name}_task_head.pt"
-                    ),
-                    map_location=self.args.device,
-                )
+            torch.load(
+                os.path.join(
+                    task_head_dir, f"{self.task_unit_name}_task_head.pt"
+                ),
+                map_location=self.args.device,
             )
         )
         self.mlm_optimizer.load_state_dict(
@@ -723,13 +720,11 @@ C
             self.state.best_model_checkpoint, "task_heads"
         )
         self.mlm_head.load_state_dict(
-            self._possibly_wrap_state_dict(
-                torch.load(
-                    os.path.join(
-                        task_head_dir, f"mlm_task_head.pt"
-                    ),
-                    map_location=self.args.device,
-                )
+            torch.load(
+                os.path.join(
+                    task_head_dir, f"mlm_task_head.pt"
+                ),
+                map_location=self.args.device,
             )
         )
         self.mlm_optimizer.load_state_dict(
@@ -779,21 +774,6 @@ C
                 )
 
         return model
-
-    def _possibly_wrap_state_dict(
-        self, state_dict: Dict[str, Tensor]
-    ) -> Dict[str, Tensor]:
-        """
-        Wraps the state dict in a DistributedDataParallel state dict if the task unit is
-        distributed.
-        """
-
-        if self.local_rank != -1:
-            state_dict = {
-                f"module.{key}": value for key, value in state_dict.items()
-            }
-
-        return state_dict
         
     def train(self, *args, resume_from_checkpoint=None, **kwargs):
         """
