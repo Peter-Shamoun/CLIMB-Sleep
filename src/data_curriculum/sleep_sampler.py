@@ -223,6 +223,8 @@ class SleepSampler(Sampler):
             self.wake_candidates[idx] = prob * self.decay_rate
     
     def get_replay_samples(self, num_samples=-1):
+        if len(self.replay_buffer) < 1:
+            return None
         if num_samples < 0:
             num_samples = len(self.replay_buffer)
         return_idxs = list(random.choice(self.replay_buffer, num_samples))
