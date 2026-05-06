@@ -228,5 +228,5 @@ class SleepSampler(Sampler):
         if num_samples < 0:
             num_samples = len(self.replay_buffer)
         return_idxs = list(random.choice(self.replay_buffer, num_samples))
-        result = [self.dataset[idx] for idx in return_idxs]
+        result = [self.dataset[int(idx)] for idx in return_idxs]
         return result
