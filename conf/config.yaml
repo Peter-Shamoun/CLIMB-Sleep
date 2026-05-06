@@ -19,7 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "steps-test-run"
+  name: "log-replay-test-run"
   output_dir: "/mnt/data"
 
 data_preprocessing:
