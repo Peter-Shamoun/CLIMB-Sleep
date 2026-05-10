@@ -1,5 +1,4 @@
 wake_block_steps: 1000
-sleep_max_steps: 200
 sleep_loss_threshold: 2.0
 
 # Keep top-k% high-loss samples from wake for replay
