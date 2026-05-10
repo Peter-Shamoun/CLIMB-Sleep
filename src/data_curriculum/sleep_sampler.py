@@ -1,4 +1,4 @@
-import random
+from numpy import random
 import math
 from typing import Iterator, List, Tuple, Sequence
 
@@ -16,12 +16,13 @@ class SleepSampler(Sampler):
         self,
         dataset: Dataset,
         batch_size: int,
-        replay_ratio: float = 0.1,
-        n_phases: int = 5,
-        n_augmentations = 40,
-        max_seq_length: int = 128,
-        contextualize_sleep: bool = True,
-        replay_strategy: str = "weighted"
+        replay_ratio: float=0.1,
+        n_phases: int=5,
+        n_augmentations=40,
+        max_seq_length: int=128,
+        decay_rate: float=0.7,
+        contextualize_sleep: bool=True,
+        replay_strategy: str="weighted"
     ) -> None:
         """
         Args:
@@ -31,6 +32,8 @@ class SleepSampler(Sampler):
             n_phases: Number of wake-sleep cycles
             n_augmentations: Number of augmentations for shuffling in Replay Buffer
             max_seq_length: Maximum sequence length for concatenation during sleep
+            decay_rate: controls how fast the chance of replay for older samples
+                is decayed
             contextualize_sleep: Whether to apply contextualization during sleep,
             replay_strategy: Type of strategy to apply for Replay Buffer
         """
@@ -48,11 +51,11 @@ class SleepSampler(Sampler):
         self.replay_ratio = replay_ratio
         self.replay_strategy: str = replay_strategy # choice of "loss", "random", "loss_weighted"
         self.replay_buffer: List[int] = []  # Stores indices for sleep
-        # Stores {index: loss} during wake to determine difficulty
+        # Stores {index: replay score} during wake to determine difficulty
+        self.wake_candidates: dict[int, float] = {}
+        self.decay_rate = decay_rate # decays replay chance so that older data is less likely to be sampled
 
         self.phase = "WAKE"
-        self.wake_candidates: dict[int, float] = {}
-
         self.dataset_indices = list(range(len(dataset))) # type: ignore
         random.shuffle(self.dataset_indices)
         
@@ -132,14 +135,14 @@ class SleepSampler(Sampler):
                 if self.contextualize_sleep:
                     self.contextualized_chunks = self.contextualize_buffer()
             else:
-                raise ValueError("Replay Buffer is Empty")
                 self.replay_buffer = []
+                raise ValueError("Replay Buffer is Empty")
 
         elif new_phase == "WAKE":
             # Transitioning SLEEP -> WAKE
             # Clear replay buffer and reset for new wake cycle
             self.replay_buffer = []
-            self.wake_candidates = {}
+            self.decay_wake_candidates()
             self.contextualized_chunks = []
             # Increment fold tracker and re-init max steps
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
@@ -203,7 +206,9 @@ class SleepSampler(Sampler):
         elif self.replay_strategy == "random":
             # Randomly sample from wake candidates
             candidate_indices = list(self.wake_candidates.keys())
-            self.replay_buffer = random.sample(candidate_indices, num_replay)
+            self.replay_buffer = list(random.choice(candidate_indices,
+                                               size=num_replay,
+                                               replace=False))
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()
     
@@ -212,3 +217,26 @@ class SleepSampler(Sampler):
         Returns the max steps possible for this wake phase based on the size of the buffer.
         """
         return math.ceil(len(self.folds[self.curr_fold]) / self.batch_size)
+    
+    def decay_wake_candidates(self):
+        for idx, prob in self.wake_candidates.items():
+            self.wake_candidates[idx] = prob * self.decay_rate
+    
+    def get_replay_samples(self, num_samples=-1):
+        """ Returns a random selection of samples from the replay buffer for analysis.
+
+        Args:
+            num_samples (int, optional): Number of samples to return. Defaults to -1: return entire buffer.
+
+        Returns:
+            List(Tuple(Dict, float)): List of samples and losses. Samples 
+                contain lists of ints with keys input_ids, special_tokens_mask,
+                and attention_mask.
+        """
+        if len(self.replay_buffer) < 1:
+            return None
+        if num_samples < 0:
+            return self.replay_buffer.copy()
+        return_idxs = list(random.choice(self.replay_buffer, num_samples))
+        result = [(self.dataset[int(idx)], self.wake_candidates[idx]) for idx in return_idxs]
+        return result

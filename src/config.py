@@ -186,6 +186,8 @@ class SleepMechanismParams(DictConfig):
     replay_ratio: float = 0.1
     # How to select samples from replay buffer. Choose from random, weighted, or strict.
     replay_strategy: str = "weighted"
+    # Decay rate for wake candidates from previous phases
+    replay_decay_rate: float = 0.7
     # Plasticity decay type
     # plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
     # Factor by which to decay plasticity
