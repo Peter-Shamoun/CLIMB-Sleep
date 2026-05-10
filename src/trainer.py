@@ -118,7 +118,7 @@ C
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
         if self.sleep_mechanism_cfg:
-            self.sleep_mechanism_cfg.sleep_max_steps = (
+            self.sleep_max_steps = (
                 (args.max_steps
                     - min(
                         self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
@@ -126,7 +126,7 @@ C
                         ))
                 // self.sleep_mechanism_cfg.n_phases
             )
-            if self.sleep_mechanism_cfg.sleep_max_steps < 1:
+            if self.sleep_max_steps < 1:
                 min_steps = (min(
                     self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
                     len(self.train_dataset) // self.args.per_device_train_batch_size) 
@@ -399,7 +399,7 @@ C
             phase = sampler.phase
             phase_max = (min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps) 
                          if phase == 'WAKE' 
-                         else self.sleep_mechanism_cfg.sleep_max_steps)
+                         else self.sleep_max_steps)
 
             if self.phase_steps >= phase_max:
                 if (phase == "WAKE"

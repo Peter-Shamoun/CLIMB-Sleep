@@ -176,8 +176,6 @@ class PlasticityDecayType(str, Enum):
 class SleepMechanismParams(DictConfig):
     # Number of steps to train on new data before entering sleep
     wake_block_steps: int
-    # Maximum number of steps allowed in a sleep phase
-    sleep_max_steps: int
     # Target loss value to exit sleep phase early
     # SHOULD WE MAKE THIS OPTIONAL??
     # sleep_loss_threshold: Optional[float] = None
