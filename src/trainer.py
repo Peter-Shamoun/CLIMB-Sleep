@@ -382,11 +382,6 @@ C
         ):
 
             self.log(loss_metrics)
-
-        ### --- LOGGING OUT REPLAY METRICS AND SAMPLES --- ###
-        # TODO: This is where saving the replay table would go
-        # ex: at the end of every sleep phase, we could save 5 random samples from replay buffer
-        # check CLIMB repo to see more
         return loss
     
     def training_step(self, model, inputs, *args):
