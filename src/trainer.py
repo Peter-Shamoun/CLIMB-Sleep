@@ -343,6 +343,7 @@ C
             else None,
         )
         base_model_hidden_states = base_model_outputs[0]
+        
         logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
             override_labels
@@ -379,6 +380,7 @@ C
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
             and self.state.global_step % self.args.logging_steps == 0
+            and not inference
         ):
 
             self.log(loss_metrics)
