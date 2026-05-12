@@ -118,21 +118,22 @@ C
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
         if self.sleep_mechanism_cfg:
-            self.sleep_max_steps = (
-                (args.max_steps
-                    - min(
+            total_wake_steps = min(
                         self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
                         len(self.train_dataset) // self.args.per_device_train_batch_size
-                        ))
+                        )
+            self.sleep_max_steps = (
+                (args.max_steps
+                    - total_wake_steps)
                 // self.sleep_mechanism_cfg.n_phases
             )
             if self.sleep_max_steps < 1:
-                min_steps = (min(
-                    self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
-                    len(self.train_dataset) // self.args.per_device_train_batch_size) 
+                min_steps = (total_wake_steps
                              + self.sleep_mechanism_cfg.n_phases)
                 logger.info("Too few steps for training! Min steps: %d" % min_steps)
                 raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
+        logger.info("Wake steps/phase: %d" % math.ceil(total_wake_steps / self.sleep_mechanism_cfg.n_phases))
+        logger.info("Sleep steps/phase: %d" % self.sleep_max_steps)
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
@@ -236,8 +237,10 @@ C
             logs (`Dict[str, float]`):
                 The values to log.
         """
-        if self.state.epoch is not None:
-            logs["epoch"] = round(self.state.epoch, 2)
+        # if self.state.epoch is not None:
+        #     logs["epoch"] = round(self.state.epoch, 2)
+        logger.info(f"LOGGING... {logs}")
+        logger.info(f"GLOBAL STEP: {self.state.global_step}")
 
         output = {**logs, **{"step": self.state.global_step}}
         if "sleep_table" not in logs:
