@@ -241,7 +241,7 @@ C
         # if self.state.epoch is not None:
         #     logs["epoch"] = round(self.state.epoch, 2)
         logger.info(f"LOGGING... {logs}")
-        logger.info(f"GLOBAL STEP: {self.state.global_step}")
+        logger.info(f"GLOBAL STEP: {self.state.global_step};{self.global_step}")
 
         output = {**logs, **{"step": self.state.global_step}}
         if "sleep_table" not in logs:
