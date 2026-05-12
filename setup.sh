@@ -17,6 +17,6 @@ unzip $EVAL_DATA_DIR -d lib/evaluation-pipeline-2025/evaluation_data/
 echo "Eval pipeline installed"
 
 # Login
-wandb login
+.venv/bin/wandb login
 
 echo "Completed setup"
