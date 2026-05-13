@@ -84,6 +84,7 @@ class CustomTrainer(Trainer):
         args: TrainingArguments,
         tokenizer: PreTrainedTokenizerFast,
         sleep_table: Table,
+        max_steps_per_phase: Dict[str, int],
         **kwargs,
     ) -> None:
         """
@@ -118,23 +119,8 @@ class CustomTrainer(Trainer):
         super().__init__(args=args, **kwargs)
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
-        if self.sleep_mechanism_cfg:
-            total_wake_steps = min(
-                        self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
-                        len(self.train_dataset) // self.args.per_device_train_batch_size
-                        )
-            self.sleep_max_steps = (
-                (args.max_steps
-                    - total_wake_steps)
-                // self.sleep_mechanism_cfg.n_phases
-            )
-            if self.sleep_max_steps < 1:
-                min_steps = (total_wake_steps
-                             + self.sleep_mechanism_cfg.n_phases)
-                logger.info("Too few steps for training! Min steps: %d" % min_steps)
-                raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
-        logger.info("Wake steps/phase: %d" % math.ceil(total_wake_steps / self.sleep_mechanism_cfg.n_phases))
-        logger.info("Sleep steps/phase: %d" % self.sleep_max_steps)
+        self.max_steps_per_phase = max_steps_per_phase
+
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
@@ -404,9 +390,7 @@ class CustomTrainer(Trainer):
             # if wake phase over, reset phase steps, eval, then switch
             sampler = self.callback_handler.train_dataloader.sampler
             phase = sampler.phase
-            phase_max = (min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps) 
-                         if phase == 'WAKE' 
-                         else self.sleep_max_steps)
+            phase_max = self.max_steps_per_phase[phase]
 
             if self.phase_steps >= phase_max:
                 if (phase == "WAKE"

@@ -3,7 +3,7 @@
 # Plasticity decay disabled here; see utility_with_decay.yaml for the combined run.
 
 wake_block_steps: 9999999
-sleep_loss_threshold: 0.5
+sleep_wake_ratio: 5.0 # num eq. epochs - 1
 replay_ratio: 0.3
 replay_strategy: "utility"
 replay_decay_rate: 0.7

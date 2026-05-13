@@ -183,10 +183,9 @@ class PlasticityDecayParams(DictConfig):
 class SleepMechanismParams(DictConfig):
     # Number of steps to train on new data before entering sleep
     wake_block_steps: int
-    # Target loss value to exit sleep phase early
-    # SHOULD WE MAKE THIS OPTIONAL??
-    # sleep_loss_threshold: Optional[float] = None
-    sleep_loss_threshold: float
+    # Ratio of total sleep steps to total wake steps
+    # If negative, training length is determined by max_training_steps
+    sleep_wake_ratio: float = -1.0
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
     # How to select samples from replay buffer. Choose from random, weighted, strict, or utility.
