@@ -356,9 +356,9 @@ class CustomTrainer(Trainer):
             else inputs["labels"]
         )
         overridden_inputs = {key:value for key, value in inputs.items()}
-        if override_labels:
+        if override_labels is not None:
             overridden_inputs["labels"] = override_labels
-        if override_input_ids:
+        if override_input_ids is not None:
             overridden_inputs["input_ids"] = override_input_ids
         loss = super.compute_loss(model, overridden_inputs)
         
