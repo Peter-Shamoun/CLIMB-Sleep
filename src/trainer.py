@@ -361,7 +361,9 @@ class CustomTrainer(Trainer):
             # Compute per-sample loss for sleep mechanism replay buffer
             # logger.info("Computing per-sample loss")
             per_sample_loss = cross_entropy(logits, labels, reduction='none', **(loss_kwargs or {}))
-            per_sample_loss = per_sample_loss.mean(dim=-1) # avgs across samples
+            mask = (labels != -100).float()
+            # avgs across sequences - 1 loss per sample, for unmasked tokens
+            per_sample_loss = (per_sample_loss * mask).sum(dim=-1) / mask.sum(dim=-1).clamp(min=1)
             # loss = per_sample_loss.mean()
             # Add per-sample loss to sampler
             if "indices" in inputs:
