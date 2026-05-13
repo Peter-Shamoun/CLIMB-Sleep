@@ -1,0 +1,95 @@
+"""Per-sample gradient utilities backed by torch.func.vmap.
+
+Shared by Gain x Need replay selection (Method 1) and online empirical Fisher
+plasticity decay (Method 2). A single vmap call produces per-sample gradients;
+both methods consume the same result.
+
+Callers must pass the unwrapped base model (no DDP wrapper) and the MLM head
+as separate nn.Modules. Inputs come from a normal MLM batch:
+    input_ids:       [B, S]
+    attention_mask:  [B, S]
+    labels:          [B, S]  (-100 at non-masked positions, per the trainer)
+
+The per-sample loss is ``cross_entropy(logits, labels)`` with default mean
+reduction -- the standard MLM loss averaged over unmasked positions of each
+sample. This matches what the optimizer is minimizing on a per-sample basis,
+so Gain = ||grad||^2 is a first-order Taylor estimate of expected loss drop.
+"""
+
+from typing import Dict
+
+import torch
+from torch import Tensor
+from torch.func import functional_call, grad, vmap
+from torch.nn import Module
+from torch.nn.functional import cross_entropy
+
+
+def per_sample_grads(
+    model: Module,
+    mlm_head: Module,
+    input_ids: Tensor,
+    attention_mask: Tensor,
+    labels: Tensor,
+) -> Dict[str, Tensor]:
+    """Per-sample gradients of the MLM loss w.r.t. trainable params.
+
+    Returns a dict keyed by ``"model.<name>"`` or ``"mlm_head.<name>"``. Each
+    value has shape ``[batch, *param_shape]``. Only ``requires_grad=True``
+    parameters are included.
+    """
+    base_params = {
+        k: v.detach() for k, v in model.named_parameters() if v.requires_grad
+    }
+    head_params = {
+        k: v.detach() for k, v in mlm_head.named_parameters() if v.requires_grad
+    }
+    base_buffers = {k: v.detach() for k, v in model.named_buffers()}
+    head_buffers = {k: v.detach() for k, v in mlm_head.named_buffers()}
+
+    def loss_fn(base_p, head_p, base_b, head_b, x, attn, y):
+        x_b = x.unsqueeze(0)
+        attn_b = attn.unsqueeze(0)
+        y_b = y.unsqueeze(0)
+        base_out = functional_call(
+            model,
+            (base_p, base_b),
+            args=(),
+            kwargs={"input_ids": x_b, "attention_mask": attn_b},
+        )
+        hidden = base_out[0]
+        logits = functional_call(
+            mlm_head,
+            (head_p, head_b),
+            args=(hidden,),
+        ).transpose(-1, -2)
+        return cross_entropy(logits, y_b)
+
+    grad_fn = grad(loss_fn, argnums=(0, 1))
+    per_sample = vmap(grad_fn, in_dims=(None, None, None, None, 0, 0, 0))
+    base_grads, head_grads = per_sample(
+        base_params,
+        head_params,
+        base_buffers,
+        head_buffers,
+        input_ids,
+        attention_mask,
+        labels,
+    )
+
+    out: Dict[str, Tensor] = {}
+    for k, v in base_grads.items():
+        out[f"model.{k}"] = v
+    for k, v in head_grads.items():
+        out[f"mlm_head.{k}"] = v
+    return out
+
+
+def per_sample_squared_grad_norms(grads: Dict[str, Tensor]) -> Tensor:
+    """Sum of squared gradient elements per sample. Returns shape ``[batch]``."""
+    total = None
+    for g in grads.values():
+        flat = g.reshape(g.shape[0], -1)
+        contrib = (flat * flat).sum(dim=1)
+        total = contrib if total is None else total + contrib
+    return total
