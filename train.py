@@ -139,7 +139,7 @@ def main(cfg: BabyLMConfig):
     # Set up training arguments
     # set up max steps
     max_training_steps = cfg.trainer.max_training_steps
-    steps_kwargs = {}
+    max_steps_per_phase = {}
     if cfg.sleep_mechanism:
         total_wake_steps = min(
             cfg.sleep_mechanism.wake_block_steps * cfg.sleep_mechanism.n_phases,
@@ -172,9 +172,9 @@ def main(cfg: BabyLMConfig):
         logger.info("Sleep steps/phase: %d" % sleep_max_steps_per_phase)
         logger.info("Sleep/Wake ratio: %f" % (sleep_max_steps_per_phase / wake_steps_per_phase))
         logger.info("Total max steps: %d" % max_training_steps)
-        steps_kwargs = {
-            "sleep_max_steps_per_phase": sleep_max_steps_per_phase,
-            "wake_steps_per_phase": wake_steps_per_phase
+        max_steps_per_phase = {
+            "SLEEP": sleep_max_steps_per_phase,
+            "WAKE": wake_steps_per_phase
         }
         
     logging_steps = (max_training_steps 
@@ -227,7 +227,7 @@ def main(cfg: BabyLMConfig):
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         sleep_table=sleep_table,
-        **steps_kwargs
+        max_steps = max_steps_per_phase
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
     if not cfg.experiment.resume_checkpoint_path:

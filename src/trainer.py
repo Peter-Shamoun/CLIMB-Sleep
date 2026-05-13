@@ -84,6 +84,7 @@ class CustomTrainer(Trainer):
         args: TrainingArguments,
         tokenizer: PreTrainedTokenizerFast,
         sleep_table: Table,
+        max_steps_per_phase: Dict[str, int],
         **kwargs,
     ) -> None:
         """
@@ -118,9 +119,7 @@ class CustomTrainer(Trainer):
         super().__init__(args=args, **kwargs)
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
-        if self.sleep_mechanism_cfg:
-            self.sleep_max_steps_per_phase = kwargs['sleep_max_steps_per_phase']
-            self.wake_steps_per_phase = kwargs['wake_steps_per_phase']
+        self.max_steps_per_phase = max_steps_per_phase
 
         self.phase_steps = 0
 
@@ -391,9 +390,7 @@ class CustomTrainer(Trainer):
             # if wake phase over, reset phase steps, eval, then switch
             sampler = self.callback_handler.train_dataloader.sampler
             phase = sampler.phase
-            phase_max = (self.wake_steps_per_phase 
-                         if phase == 'WAKE' 
-                         else self.sleep_max_steps_per_phase)
+            phase_max = self.max_steps_per_phase[phase]
 
             if self.phase_steps >= phase_max:
                 if (phase == "WAKE"
