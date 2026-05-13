@@ -120,21 +120,29 @@ class CustomTrainer(Trainer):
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
         if self.sleep_mechanism_cfg:
             total_wake_steps = min(
-                        self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
-                        len(self.train_dataset) // self.args.per_device_train_batch_size
-                        )
-            self.sleep_max_steps = (
-                (args.max_steps
-                    - total_wake_steps)
-                // self.sleep_mechanism_cfg.n_phases
+                self.sleep_mechanism_cfg.wake_block_steps * self.sleep_mechanism_cfg.n_phases,
+                len(self.train_dataset) // self.args.per_device_train_batch_size
             )
-            if self.sleep_max_steps < 1:
+            wake_steps_per_phase = (total_wake_steps // self.sleep_mechanism_cfg.n_phases)
+            if self.sleep_mechanism_cfg.sleep_wake_ratio > 0:
+                self.sleep_max_steps_per_phase = (
+                    wake_steps_per_phase
+                    * self.sleep_mechanism_cfg.sleep_wake_ratio
+                )
+            else:
+                self.sleep_max_steps_per_phase = (
+                    (args.max_steps
+                        - total_wake_steps)
+                    // self.sleep_mechanism_cfg.n_phases
+                )
+            if self.sleep_max_steps_per_phase < 1:
                 min_steps = (total_wake_steps
-                             + self.sleep_mechanism_cfg.n_phases)
+                            + self.sleep_mechanism_cfg.n_phases)
                 logger.info("Too few steps for training! Min steps: %d" % min_steps)
                 raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
-        logger.info("Wake steps/phase: %d" % math.ceil(total_wake_steps / self.sleep_mechanism_cfg.n_phases))
-        logger.info("Sleep steps/phase: %d" % self.sleep_max_steps)
+        logger.info("Wake steps/phase: %d" % wake_steps_per_phase)
+        logger.info("Sleep steps/phase: %d" % self.sleep_max_steps_per_phase)
+        logger.info("Sleep/Wake ratio: %f" % self.sleep_max_steps_per_phase / wake_steps_per_phase)
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
@@ -406,7 +414,7 @@ class CustomTrainer(Trainer):
             phase = sampler.phase
             phase_max = (min(self.sleep_mechanism_cfg.wake_block_steps, sampler.wake_max_steps) 
                          if phase == 'WAKE' 
-                         else self.sleep_max_steps)
+                         else self.sleep_max_steps_per_phase)
 
             if self.phase_steps >= phase_max:
                 if (phase == "WAKE"
