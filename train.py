@@ -3,6 +3,7 @@
 import logging
 import os
 import argparse
+import math
 
 # config-related imports
 import hydra
@@ -132,22 +133,48 @@ def main(cfg: BabyLMConfig):
                         # "losses",
                     ]
                 )
+            else:
+                sleep_table = None
 
     # Set up training arguments
-    # if cfg.sleep_mechanism:
-    #     theoretical_max_steps = int((cfg.sleep_mechanism.wake_block_steps 
-    #                             + cfg.sleep_mechanism.sleep_max_steps) 
-    #                             * cfg.sleep_mechanism.n_phases)
-    #     empirical_max_steps = int((len(train_dataset) 
-    #                                // cfg.trainer.batch_size)
-    #                               + (cfg.sleep_mechanism.sleep_max_steps 
-    #                                  * cfg.sleep_mechanism.n_phases))
-    #     logger.info("Theretical max steps: %d", theoretical_max_steps)
-    #     logger.info("Empirical max steps: %d", empirical_max_steps)
-    #     max_training_steps = min(theoretical_max_steps, empirical_max_steps)
-    # else:
-    #     max_training_steps = cfg.trainer.max_training_steps
+    # set up max steps
     max_training_steps = cfg.trainer.max_training_steps
+    steps_kwargs = {}
+    if cfg.sleep_mechanism:
+        total_wake_steps = min(
+            cfg.sleep_mechanism.wake_block_steps * cfg.sleep_mechanism.n_phases,
+            math.ceil(len(train_dataset) / cfg.trainer.batch_size)
+        )
+        wake_steps_per_phase = math.ceil(total_wake_steps / cfg.sleep_mechanism.n_phases)
+        
+        # Set according to ratio
+        if cfg.sleep_mechanism.sleep_wake_ratio > 0:
+            sleep_max_steps_per_phase = (
+                wake_steps_per_phase
+                * cfg.sleep_mechanism.sleep_wake_ratio
+            )
+            total_sleep_steps = sleep_max_steps_per_phase * cfg.sleep_mechanism.n_phases
+            max_training_steps = total_wake_steps + total_sleep_steps
+            
+        # Set according to max steps
+        else:
+            total_sleep_steps = max_training_steps - total_wake_steps
+            sleep_max_steps_per_phase = (
+                math.ceil(total_sleep_steps / cfg.sleep_mechanism.n_phases)
+            )
+            
+        if sleep_max_steps_per_phase < 1:
+            min_steps = (total_wake_steps
+                        + cfg.sleep_mechanism.n_phases)
+            logger.info("Too few steps for training! Min steps: %d" % min_steps)
+            raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
+        logger.info("Wake steps/phase: %d" % wake_steps_per_phase)
+        logger.info("Sleep steps/phase: %d" % sleep_max_steps_per_phase)
+        logger.info("Sleep/Wake ratio: %f" % (sleep_max_steps_per_phase / wake_steps_per_phase))
+        steps_kwargs = {
+            "sleep_max_steps_per_phase": sleep_max_steps_per_phase,
+            "wake_steps_per_phase": wake_steps_per_phase
+        }
         
     logging_steps = (max_training_steps 
                      // (100 if cfg.experiment.dry_run else 1000))
