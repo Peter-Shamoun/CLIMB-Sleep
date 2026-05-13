@@ -169,7 +169,7 @@ class CustomTrainer(Trainer):
 
         self.mlm_scheduler = get_linear_schedule_with_warmup(
             self.mlm_optimizer,
-            num_warmup_steps=args.max_steps // 10,
+            num_warmup_steps=args.warmup_steps,
             num_training_steps=args.max_steps,
         )
 
@@ -355,12 +355,6 @@ class CustomTrainer(Trainer):
             if override_labels is not None
             else inputs["labels"]
         )
-        overridden_inputs = {key:value for key, value in inputs.items()}
-        if override_labels is not None:
-            overridden_inputs["labels"] = override_labels
-        if override_input_ids is not None:
-            overridden_inputs["input_ids"] = override_input_ids
-        loss = super().compute_loss(model, overridden_inputs)
         
         # Compute the loss
         if track_per_sample:
@@ -376,6 +370,7 @@ class CustomTrainer(Trainer):
                 self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
         # else:
             # logger.info("Computing loss")
+        loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
         if inference: # Return loss early if inference
             return loss
         # averaging over the processes
