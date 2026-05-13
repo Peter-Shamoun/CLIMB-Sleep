@@ -142,7 +142,7 @@ class CustomTrainer(Trainer):
                 raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
         logger.info("Wake steps/phase: %d" % wake_steps_per_phase)
         logger.info("Sleep steps/phase: %d" % self.sleep_max_steps_per_phase)
-        logger.info("Sleep/Wake ratio: %f" % self.sleep_max_steps_per_phase / wake_steps_per_phase)
+        logger.info("Sleep/Wake ratio: %f" % (self.sleep_max_steps_per_phase / wake_steps_per_phase))
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
