@@ -162,7 +162,11 @@ def main(cfg: BabyLMConfig):
             sleep_max_steps_per_phase = (
                 math.ceil(total_sleep_steps / cfg.sleep_mechanism.n_phases)
             )
-            
+        # convert all to integers    
+        sleep_max_steps_per_phase = int(sleep_max_steps_per_phase)
+        wake_steps_per_phase = int(wake_steps_per_phase)
+        max_training_steps = int(max_training_steps)
+        
         if sleep_max_steps_per_phase < 1:
             min_steps = (total_wake_steps
                         + cfg.sleep_mechanism.n_phases)
