@@ -328,6 +328,7 @@ C
         # Check if we should track per-sample losses for sleep mechanism
         track_per_sample = (
             self.sleep_mechanism_cfg is not None
+            and not inference
             and hasattr(self, 'callback_handler')
             and hasattr(self.callback_handler, 'train_dataloader')
             and self.callback_handler.train_dataloader is not None
@@ -359,7 +360,7 @@ C
         if track_per_sample:
             # Compute per-sample loss for sleep mechanism replay buffer
             logger.info("Computing per-sample loss")
-            per_sample_loss = cross_entropy(logits, labels, reduction='none')
+            per_sample_loss = cross_entropy(logits, labels, reduction='none', **(loss_kwargs or {}))
             per_sample_loss = per_sample_loss.mean(dim=-1) # avgs across samples
             loss = per_sample_loss.mean()
             # Add per-sample loss to sampler
