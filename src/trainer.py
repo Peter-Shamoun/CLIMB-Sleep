@@ -360,7 +360,7 @@ class CustomTrainer(Trainer):
             overridden_inputs["labels"] = override_labels
         if override_input_ids is not None:
             overridden_inputs["input_ids"] = override_input_ids
-        loss = super.compute_loss(model, overridden_inputs)
+        loss = super().compute_loss(model, overridden_inputs)
         
         # Compute the loss
         if track_per_sample:
