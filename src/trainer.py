@@ -392,7 +392,6 @@ class CustomTrainer(Trainer):
         ):
 
             self.log(loss_metrics)
-        logger.info(f"LOSS: {loss}")
         return loss
     
     def training_step(self, model, inputs, *args):
