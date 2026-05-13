@@ -371,6 +371,8 @@ C
         else:
             logger.info("Computing loss")
             loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
+        if inference:
+            return loss
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
         loss_metrics["loss_mlm"] = total_unit_loss_scalar
