@@ -415,6 +415,10 @@ class CustomTrainer(Trainer):
                 next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
                 self._swap_phase(sampler, phase, next_phase)
         
+        # Train task head
+        self.mlm_optimizer.step()
+        self.mlm_scheduler.step()
+        self.mlm_head.zero_grad()
         return loss
 
     def evaluate(
