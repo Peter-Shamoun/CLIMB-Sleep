@@ -227,7 +227,7 @@ def main(cfg: BabyLMConfig):
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         sleep_table=sleep_table,
-        max_steps = max_steps_per_phase
+        max_steps_per_phase = max_steps_per_phase
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
     if not cfg.experiment.resume_checkpoint_path:
