@@ -358,6 +358,7 @@ C
         # Compute the loss
         if track_per_sample:
             # Compute per-sample loss for sleep mechanism replay buffer
+            logger.info("Computing per-sample loss")
             per_sample_loss = cross_entropy(logits, labels, reduction='none')
             per_sample_loss = per_sample_loss.mean(dim=-1) # avgs across samples
             loss = per_sample_loss.mean()
@@ -367,6 +368,7 @@ C
                 losses = per_sample_loss.detach().cpu().tolist()
                 self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
         else:
+            logger.info("Computing loss")
             loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
@@ -389,6 +391,7 @@ C
         ):
 
             self.log(loss_metrics)
+        logger.info(f"LOSS: {loss}")
         return loss
     
     def training_step(self, model, inputs, *args):
