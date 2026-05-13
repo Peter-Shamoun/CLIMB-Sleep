@@ -99,7 +99,7 @@ class CustomTrainer(Trainer):
                 in order to have access to possible arguments meant to be used in the Custom
                 Trainer class.
             * tokenizer (PreTrainedTokenizerFast): The tokenizer used for the current run.
-C
+
         """
 
         self.hydra_config = hydra_config
@@ -169,7 +169,7 @@ C
 
         self.mlm_scheduler = get_linear_schedule_with_warmup(
             self.mlm_optimizer,
-            num_warmup_steps=args.warmup_steps,
+            num_warmup_steps=args.max_steps // 10,
             num_training_steps=args.max_steps,
         )
 
@@ -359,38 +359,36 @@ C
         # Compute the loss
         if track_per_sample:
             # Compute per-sample loss for sleep mechanism replay buffer
-            logger.info("Computing per-sample loss")
+            # logger.info("Computing per-sample loss")
             per_sample_loss = cross_entropy(logits, labels, reduction='none', **(loss_kwargs or {}))
             per_sample_loss = per_sample_loss.mean(dim=-1) # avgs across samples
-            loss = per_sample_loss.mean()
+            # loss = per_sample_loss.mean()
             # Add per-sample loss to sampler
             if "indices" in inputs:
                 indices = inputs['indices'].tolist()
                 losses = per_sample_loss.detach().cpu().tolist()
                 self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
-        else:
-            logger.info("Computing loss")
-            loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
-        if inference:
+        # else:
+            # logger.info("Computing loss")
+        loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
+        if inference: # Return loss early if inference
             return loss
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
         loss_metrics["loss_mlm"] = total_unit_loss_scalar
-        if self.sleep_mechanism_cfg and not inference:
+        if self.sleep_mechanism_cfg:
             curr_phase = self.callback_handler.train_dataloader.sampler.phase
             loss_metrics[f"loss_mlm_{curr_phase}"] = total_unit_loss_scalar
             
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
         # incrementing here ensures we track one step per gradient update
-        if not inference:
-            self.global_step += 1
-            self.phase_steps += 1
+        self.global_step += 1
+        self.phase_steps += 1
         
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
             and self.state.global_step % self.args.logging_steps == 0
-            and not inference
         ):
 
             self.log(loss_metrics)
