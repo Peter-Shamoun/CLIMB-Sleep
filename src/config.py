@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
 from omegaconf import MISSING, DictConfig
-from enum import Enum
 
 
 @dataclass
@@ -16,7 +15,7 @@ class ExperimentParams(DictConfig):
 
     # Name of wandb entity experiment belongs to
     entity: str = MISSING
-    
+
     # Name of the group that the current experiment belongs to
     # analogous to 'project' in wandb
     group: str = MISSING
@@ -36,6 +35,7 @@ class ExperimentParams(DictConfig):
 
     # Directory where outputs are saved, ex: model checkpoints, eval results
     output_dir: str = MISSING
+
 
 @dataclass
 class DatasetParams(DictConfig):
@@ -164,11 +164,18 @@ class VocabularyCurriculumParams(DictConfig):
 
     pacing_fn_kwargs: PacingFunctionParams
 
+
 # Plasticity decay for sleep mechanism
-class PlasticityDecayType(str, Enum):
-    lr_decay = "lr_decay"
-    freeze_layers = "freeze_layers"
-    pruning = "pruning"
+@dataclass
+class PlasticityDecayParams(DictConfig):
+    # Whether plasticity decay fires after sleep phases.
+    enabled: bool = False
+    # Only "fisher_protected_shrink" is implemented; kept as string for future variants.
+    decay_type: str = "fisher_protected_shrink"
+    # Multiplicative factor applied to non-protected weights after each sleep phase.
+    shrink_factor: float = 0.95
+    # Fraction of weights protected from shrink (ranked by empirical Fisher diagonal).
+    protect_top_fraction: float = 0.20
 
 
 # Sleep mechanism params
@@ -182,14 +189,10 @@ class SleepMechanismParams(DictConfig):
     sleep_loss_threshold: float
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
-    # How to select samples from replay buffer. Choose from random, weighted, or strict.
+    # How to select samples from replay buffer. Choose from random, weighted, strict, or utility.
     replay_strategy: str = "weighted"
     # Decay rate for wake candidates from previous phases
     replay_decay_rate: float = 0.7
-    # Plasticity decay type
-    # plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
-    # Factor by which to decay plasticity
-    # plasticity_decay_rate: float = 0.9
     # Number of context augmentations applied per batch
     n_augmentations: int = 40
     # Number of wake-sleep cycles
@@ -198,6 +201,18 @@ class SleepMechanismParams(DictConfig):
     max_seq_length: int = 128
     # Whether to apply contextualization during sleep
     contextualize_sleep: bool = True
+    # === Utility replay (Gain x Need) params, only used when replay_strategy == "utility" ===
+    # Temperature for softmax over per-sample squared gradient norms (Gain).
+    utility_temperature_gain: float = 1.0
+    # Temperature for softmax over k-NN density scores (Need).
+    utility_temperature_need: float = 1.0
+    # k for k-NN density computation in Need.
+    need_knn_k: int = 50
+    # Number of trailing transformer layers to mean-pool for embedding extraction.
+    need_embedding_layers: int = 4
+    # === Plasticity decay ===
+    plasticity_decay: Optional[PlasticityDecayParams] = None
+
 
 ### Container for entire config ###
 

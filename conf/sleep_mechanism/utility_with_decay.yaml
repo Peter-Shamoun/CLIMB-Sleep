@@ -1,0 +1,24 @@
+# Gain x Need utility replay + online empirical Fisher plasticity decay.
+# After each sleep phase, all weights are multiplied by shrink_factor except the
+# top protect_top_fraction by accumulated squared per-sample gradient (Fisher diagonal).
+
+wake_block_steps: 9999999
+sleep_loss_threshold: 0.5
+replay_ratio: 0.3
+replay_strategy: "utility"
+replay_decay_rate: 0.7
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+utility_temperature_gain: 1.0
+utility_temperature_need: 1.0
+need_knn_k: 50
+need_embedding_layers: 4
+
+plasticity_decay:
+  enabled: true
+  decay_type: "fisher_protected_shrink"
+  shrink_factor: 0.95
+  protect_top_fraction: 0.20
