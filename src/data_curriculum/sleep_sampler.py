@@ -5,6 +5,8 @@ from typing import Iterator, List, Optional, Tuple, Sequence
 import torch
 from torch.utils.data import Dataset, Sampler
 
+from src.data_curriculum.utility_scoring import sample_utility_indices
+
 
 class SleepSampler(Sampler):
     """
@@ -23,6 +25,8 @@ class SleepSampler(Sampler):
         decay_rate: float = 0.7,
         contextualize_sleep: bool = True,
         replay_strategy: str = "weighted",
+        utility_temperature_gain: float = 1.0,
+        utility_temperature_need: float = 1.0,
     ) -> None:
         """
         Args:
@@ -58,6 +62,11 @@ class SleepSampler(Sampler):
         # Stores {index: squared gradient norm} during wake for Gain x Need replay.
         # Populated by add_to_candidates when the trainer computes per-sample grads.
         self.wake_gain: dict[int, float] = {}
+        # Need scores: set by the trainer at end of wake before switch_phase("SLEEP").
+        self.need_scores: dict[int, float] = {}
+        # Utility-replay temperatures (only consulted when replay_strategy == "utility")
+        self.utility_temperature_gain = utility_temperature_gain
+        self.utility_temperature_need = utility_temperature_need
         self.decay_rate = decay_rate  # decays replay chance so that older data is less likely to be sampled
 
         self.phase = "WAKE"
@@ -175,6 +184,7 @@ class SleepSampler(Sampler):
             # Gain values are model-state-dependent; stale norms from earlier cycles
             # would bias selection. Clear fully rather than decay.
             self.wake_gain = {}
+            self.need_scores = {}
             self.contextualized_chunks = []
             # Increment fold tracker and re-init max steps
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
@@ -246,6 +256,20 @@ class SleepSampler(Sampler):
                 random.choice(
                     candidate_indices, size=num_replay, replace=False
                 )
+            )
+        elif self.replay_strategy == "utility":
+            assert (
+                self.wake_gain
+            ), "Gain dict empty; trainer should populate via add_to_candidates"
+            assert (
+                self.need_scores
+            ), "Need dict empty; trainer should set before switch_phase('SLEEP')"
+            self.replay_buffer = sample_utility_indices(
+                gain_scores=self.wake_gain,
+                need_scores=self.need_scores,
+                num_replay=num_replay,
+                temperature_gain=self.utility_temperature_gain,
+                temperature_need=self.utility_temperature_need,
             )
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()

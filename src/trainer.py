@@ -65,6 +65,7 @@ from src.utils.per_sample_grad import (
     per_sample_grads,
     per_sample_squared_grad_norms,
 )
+from src.data_curriculum.utility_scoring import compute_need_scores
 from src.data_curriculum.contextualize_collate import context_augmented_collate
 from wandb import Table
 
@@ -208,6 +209,8 @@ class CustomTrainer(Trainer):
                     contextualize_sleep=True,
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
                     replay_strategy=self.sleep_mechanism_cfg.replay_strategy,
+                    utility_temperature_gain=self.sleep_mechanism_cfg.utility_temperature_gain,
+                    utility_temperature_need=self.sleep_mechanism_cfg.utility_temperature_need,
                 )
             else:
                 # We are not using the sleep mechanism, so we can use the default sampler.
@@ -856,6 +859,24 @@ class CustomTrainer(Trainer):
                 columns=self.sleep_table.columns, data=self.sleep_table.data
             )
             self.log({"sleep_table": _sleep_table})
+
+        # Utility replay needs Need scores keyed by the same indices as wake_gain
+        # (the canonical candidate pool for utility selection).
+        if (
+            next_phase == "SLEEP"
+            and self.sleep_mechanism_cfg.replay_strategy == "utility"
+            and sampler.wake_gain
+        ):
+            logger.info("Computing Need scores for utility replay...")
+            sampler.need_scores = compute_need_scores(
+                model=unwrap_model(self.model),
+                dataset=self.train_dataset,
+                candidate_indices=list(sampler.wake_gain.keys()),
+                n_layers=self.sleep_mechanism_cfg.need_embedding_layers,
+                k=self.sleep_mechanism_cfg.need_knn_k,
+                device=self.args.device,
+                batch_size=self.args.per_device_train_batch_size,
+            )
 
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
