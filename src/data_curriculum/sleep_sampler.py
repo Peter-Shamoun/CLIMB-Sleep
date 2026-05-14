@@ -1,6 +1,6 @@
 from numpy import random
 import math
-from typing import Iterator, List, Tuple, Sequence
+from typing import Iterator, List, Optional, Tuple, Sequence
 
 import torch
 from torch.utils.data import Dataset, Sampler
@@ -16,13 +16,13 @@ class SleepSampler(Sampler):
         self,
         dataset: Dataset,
         batch_size: int,
-        replay_ratio: float=0.1,
-        n_phases: int=5,
+        replay_ratio: float = 0.1,
+        n_phases: int = 5,
         n_augmentations=40,
-        max_seq_length: int=128,
-        decay_rate: float=0.7,
-        contextualize_sleep: bool=True,
-        replay_strategy: str="weighted"
+        max_seq_length: int = 128,
+        decay_rate: float = 0.7,
+        contextualize_sleep: bool = True,
+        replay_strategy: str = "weighted",
     ) -> None:
         """
         Args:
@@ -39,7 +39,7 @@ class SleepSampler(Sampler):
         """
         self.dataset = dataset
         self.batch_size = batch_size
-        
+
         # Sleep hyperparameters
         self.n_phases = n_phases
         self.n_augmentations = n_augmentations
@@ -49,32 +49,37 @@ class SleepSampler(Sampler):
 
         # Replay buffer
         self.replay_ratio = replay_ratio
-        self.replay_strategy: str = replay_strategy # choice of "loss", "random", "loss_weighted"
+        self.replay_strategy: str = (
+            replay_strategy  # choice of "loss", "random", "loss_weighted"
+        )
         self.replay_buffer: List[int] = []  # Stores indices for sleep
         # Stores {index: replay score} during wake to determine difficulty
         self.wake_candidates: dict[int, float] = {}
-        self.decay_rate = decay_rate # decays replay chance so that older data is less likely to be sampled
+        # Stores {index: squared gradient norm} during wake for Gain x Need replay.
+        # Populated by add_to_candidates when the trainer computes per-sample grads.
+        self.wake_gain: dict[int, float] = {}
+        self.decay_rate = decay_rate  # decays replay chance so that older data is less likely to be sampled
 
         self.phase = "WAKE"
-        self.dataset_indices = list(range(len(dataset))) # type: ignore
+        self.dataset_indices = list(range(len(dataset)))  # type: ignore
         random.shuffle(self.dataset_indices)
-        
+
         # Split indices into n_phases folds
         self.curr_fold = 0
         self.fold_size = len(self.dataset_indices) // self.n_phases
         self.folds = [
-            self.dataset_indices[i: i + self.fold_size]
+            self.dataset_indices[i : i + self.fold_size]
             for i in range(0, len(self.dataset_indices), self.fold_size)
         ]
-        
+
         self.wake_pointer = 0
-        
+
         # Save max feasible steps for wake phase in case user-defined max exceeds
         # data in folds
         self.wake_max_steps = self.get_wake_max_steps()
-        
+
         # print(f"MAX STEPS: {len(self.dataset) // self.batch_size}")
-        
+
     def __iter__(self):
         # If wake phase:
         #   Shuffle data in fold randomly
@@ -82,44 +87,68 @@ class SleepSampler(Sampler):
         while True:
             if self.phase == "WAKE":
                 for i in self.folds[self.curr_fold]:
-                    assert i < len(self.dataset), f"Index {i} out of range of dataset"
+                    assert i < len(
+                        self.dataset
+                    ), f"Index {i} out of range of dataset"
                     yield i
             # If sleep phase:
             elif self.phase == "SLEEP":
                 # use contextualized chunks if available, otherwise use replay buffer
                 indices_to_sample = (
-                    self.contextualized_chunks if self.contextualize_sleep and self.contextualized_chunks else self.replay_buffer
+                    self.contextualized_chunks
+                    if self.contextualize_sleep and self.contextualized_chunks
+                    else self.replay_buffer
                 )
 
                 for i in indices_to_sample:
-                    assert i < len(self.dataset), f"Index {i} out of range of dataset"
+                    assert i < len(
+                        self.dataset
+                    ), f"Index {i} out of range of dataset"
                     yield i
-            
 
-    def add_to_candidates(self, indices: List[int], losses: List[float]):
+    def add_to_candidates(
+        self,
+        indices: List[int],
+        losses: List[float],
+        gain_norms: Optional[List[float]] = None,
+    ):
         """
-        Add indices and losses to the candidate buffer during WAKE phase.
+        Add indices, losses, and optional Gain scores to the candidate buffer during WAKE.
         Args:
             indices: List of sample indices.
             losses: List of per-sample loss values.
+            gain_norms: Optional list of per-sample squared gradient norms (Gain).
+                Required when replay_strategy == "utility"; ignored otherwise.
         """
-        #Can only add during WAKE phase
-        assert self.phase == "WAKE", "Attempted to update wake candidates during sleep phase."
-        
-        for idx, loss in zip(indices, losses):
+        # Can only add during WAKE phase
+        assert (
+            self.phase == "WAKE"
+        ), "Attempted to update wake candidates during sleep phase."
+        if gain_norms is not None:
+            assert len(gain_norms) == len(
+                indices
+            ), "gain_norms must have same length as indices"
+
+        for i, (idx, loss) in enumerate(zip(indices, losses)):
             # Store or update with max loss seen for this index
             loss_val = float(loss)
             if idx in self.wake_candidates:
                 # Keep the lower loss if we've seen this sample before
-                self.wake_candidates[idx] = min(self.wake_candidates[idx], loss_val)
+                self.wake_candidates[idx] = min(
+                    self.wake_candidates[idx], loss_val
+                )
             else:
                 self.wake_candidates[idx] = loss_val
+            if gain_norms is not None:
+                # Latest-seen Gain. Repeats within a single wake cycle are rare
+                # (each fold is iterated at most once per cycle).
+                self.wake_gain[idx] = float(gain_norms[i])
 
     def switch_phase(self, new_phase: str):
         """
         Toggle between WAKE and SLEEP modes.
         When switching to SLEEP, populates replay_buffer from wake_candidates.
-        When switching to WAKE, clears replay_buffer and wake_candidates and 
+        When switching to WAKE, clears replay_buffer and wake_candidates and
         advances the fold for the next phase.
         Args:
             new_phase: Either "WAKE" or "SLEEP"
@@ -143,11 +172,14 @@ class SleepSampler(Sampler):
             # Clear replay buffer and reset for new wake cycle
             self.replay_buffer = []
             self.decay_wake_candidates()
+            # Gain values are model-state-dependent; stale norms from earlier cycles
+            # would bias selection. Clear fully rather than decay.
+            self.wake_gain = {}
             self.contextualized_chunks = []
             # Increment fold tracker and re-init max steps
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
             self.wake_max_steps = self.get_wake_max_steps()
-            
+
         self.phase = new_phase
 
     def __len__(self):
@@ -162,7 +194,7 @@ class SleepSampler(Sampler):
         """
         if not self.replay_buffer:
             return []
-        
+
         all_orderings = []
 
         # create n_augmentations different shuffled orderings
@@ -173,13 +205,13 @@ class SleepSampler(Sampler):
             all_orderings.append(shuffled)
 
         # flatten: convert list of orderings into individual indices
-            # will allow __iter__ to yield them sequentially
+        # will allow __iter__ to yield them sequentially
         flattened = []
         for ordering in all_orderings:
             flattened.extend(ordering)
-        
+
         return flattened
-    
+
     def update_replay_buffer(self):
         """
         Updates the replay buffer with high-loss samples from the wake phase.
@@ -190,46 +222,52 @@ class SleepSampler(Sampler):
             sorted_candidates = sorted(
                 self.wake_candidates.items(),
                 key=lambda item: item[1],
-                reverse=True
+                reverse=True,
             )
-            self.replay_buffer = [idx for idx, loss in sorted_candidates[:num_replay]]
+            self.replay_buffer = [
+                idx for idx, loss in sorted_candidates[:num_replay]
+            ]
         elif self.replay_strategy == "weighted":
             # Sample from wake candidates weighted by loss
             candidate_indices = list(self.wake_candidates.keys())
-            candidate_losses = torch.tensor(list(self.wake_candidates.values()))
+            candidate_losses = torch.tensor(
+                list(self.wake_candidates.values())
+            )
             sampled_indices = torch.multinomial(
-                candidate_losses,
-                num_samples=num_replay,
-                replacement=False
+                candidate_losses, num_samples=num_replay, replacement=False
             ).tolist()
-            self.replay_buffer = [candidate_indices[i] for i in sampled_indices]
+            self.replay_buffer = [
+                candidate_indices[i] for i in sampled_indices
+            ]
         elif self.replay_strategy == "random":
             # Randomly sample from wake candidates
             candidate_indices = list(self.wake_candidates.keys())
-            self.replay_buffer = list(random.choice(candidate_indices,
-                                               size=num_replay,
-                                               replace=False))
+            self.replay_buffer = list(
+                random.choice(
+                    candidate_indices, size=num_replay, replace=False
+                )
+            )
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()
-    
+
     def get_wake_max_steps(self):
         """
         Returns the max steps possible for this wake phase based on the size of the buffer.
         """
         return math.ceil(len(self.folds[self.curr_fold]) / self.batch_size)
-    
+
     def decay_wake_candidates(self):
         for idx, prob in self.wake_candidates.items():
             self.wake_candidates[idx] = prob * self.decay_rate
-    
+
     def get_replay_samples(self, num_samples=-1):
-        """ Returns a random selection of samples from the replay buffer for analysis.
+        """Returns a random selection of samples from the replay buffer for analysis.
 
         Args:
             num_samples (int, optional): Number of samples to return. Defaults to -1: return entire buffer.
 
         Returns:
-            List(Tuple(Dict, float)): List of samples and losses. Samples 
+            List(Tuple(Dict, float)): List of samples and losses. Samples
                 contain lists of ints with keys input_ids, special_tokens_mask,
                 and attention_mask.
         """
@@ -238,5 +276,8 @@ class SleepSampler(Sampler):
         if num_samples < 0:
             return self.replay_buffer.copy()
         return_idxs = list(random.choice(self.replay_buffer, num_samples))
-        result = [(self.dataset[int(idx)], self.wake_candidates[idx]) for idx in return_idxs]
+        result = [
+            (self.dataset[int(idx)], self.wake_candidates[idx])
+            for idx in return_idxs
+        ]
         return result

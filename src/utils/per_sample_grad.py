@@ -42,7 +42,9 @@ def per_sample_grads(
         k: v.detach() for k, v in model.named_parameters() if v.requires_grad
     }
     head_params = {
-        k: v.detach() for k, v in mlm_head.named_parameters() if v.requires_grad
+        k: v.detach()
+        for k, v in mlm_head.named_parameters()
+        if v.requires_grad
     }
     base_buffers = {k: v.detach() for k, v in model.named_buffers()}
     head_buffers = {k: v.detach() for k, v in mlm_head.named_buffers()}
@@ -66,7 +68,13 @@ def per_sample_grads(
         return cross_entropy(logits, y_b)
 
     grad_fn = grad(loss_fn, argnums=(0, 1))
-    per_sample = vmap(grad_fn, in_dims=(None, None, None, None, 0, 0, 0))
+    # randomness='different' so dropout (or any RNG op) gets an independent mask per
+    # sample inside vmap, matching what a regular batched forward would produce.
+    per_sample = vmap(
+        grad_fn,
+        in_dims=(None, None, None, None, 0, 0, 0),
+        randomness="different",
+    )
     base_grads, head_grads = per_sample(
         base_params,
         head_params,

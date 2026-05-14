@@ -17,6 +17,7 @@ import torch.nn as nn
 from torch.nn.functional import cross_entropy
 from torch.optim import AdamW
 from huggingface_hub.hf_api import create_repo
+
 # from huggingface_hub.repository import Repository
 # from huggingface_hub.utils._errors import HfHubHTTPError
 from omegaconf import OmegaConf
@@ -28,8 +29,8 @@ from tqdm import tqdm
 
 # Model Training
 from transformers import (
-    PreTrainedTokenizerFast, 
-    Trainer, 
+    PreTrainedTokenizerFast,
+    Trainer,
     TrainerCallback,
     DataCollatorForLanguageModeling,
     RobertaConfig,
@@ -45,6 +46,7 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 from transformers.training_args import ParallelMode, TrainingArguments
+
 # from transformers.utils import (
 #     get_full_repo_name,
 #     is_torch_neuroncore_available,
@@ -59,6 +61,10 @@ from src.utils.data import base_collate_fn
 from src.utils.inference import (
     compute_trainer_perplexity,
 )
+from src.utils.per_sample_grad import (
+    per_sample_grads,
+    per_sample_squared_grad_norms,
+)
 from src.data_curriculum.contextualize_collate import context_augmented_collate
 from wandb import Table
 
@@ -68,13 +74,14 @@ from .config import BabyLMConfig
 # Sleep Sampling
 from .data_curriculum.sleep_sampler import SleepSampler
 
-# Sleep Data Loader 
+# Sleep Data Loader
 from .dataloader import SleepDataLoader
 
 # Model Evaluation
 from .evaluator import BlimpEvaluator, FinetuneEvaluator, BabyLMEvaluator
 
 logger = logging.getLogger(__name__)
+
 
 class CustomTrainer(Trainer):
     def __init__(
@@ -100,7 +107,6 @@ class CustomTrainer(Trainer):
                 in order to have access to possible arguments meant to be used in the Custom
                 Trainer class.
             * tokenizer (PreTrainedTokenizerFast): The tokenizer used for the current run.
-
         """
 
         self.hydra_config = hydra_config
@@ -133,20 +139,20 @@ class CustomTrainer(Trainer):
             )
 
         self.tokenizer = tokenizer
-        
+
         # track gradient steps for checkpointing
         self.global_step = 0
-        
+
         # Initialize MLM task head
         mlm_head_config = RobertaConfig(
             vocab_size=self.tokenizer.vocab_size,  # type: ignore
-            hidden_size=self.hidden_rep_size
+            hidden_size=self.hidden_rep_size,
         )
 
         self.mlm_head = RobertaPreLayerNormLMHead(mlm_head_config).to(
             self.args.device
         )
-        
+
         # Setting up optimizer and scheduler for task head
         self.mlm_optimizer = AdamW(
             self.mlm_head.parameters(),
@@ -189,7 +195,9 @@ class CustomTrainer(Trainer):
         if not hasattr(self, "_train_sampler"):
             if self.sleep_mechanism_cfg:
                 # Sleep-consolidated learning: use SleepSampler for wake/sleep cycles
-                logger.info("Using SleepSampler for sleep-consolidated learning")
+                logger.info(
+                    "Using SleepSampler for sleep-consolidated learning"
+                )
 
                 self._train_sampler = SleepSampler(
                     dataset=self.train_dataset,
@@ -199,7 +207,7 @@ class CustomTrainer(Trainer):
                     max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
                     contextualize_sleep=True,
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
-                    replay_strategy=self.sleep_mechanism_cfg.replay_strategy
+                    replay_strategy=self.sleep_mechanism_cfg.replay_strategy,
                 )
             else:
                 # We are not using the sleep mechanism, so we can use the default sampler.
@@ -227,7 +235,9 @@ class CustomTrainer(Trainer):
         # if self.state.epoch is not None:
         #     logs["epoch"] = round(self.state.epoch, 2)
         logger.info(f"LOGGING... {logs}")
-        logger.info(f"GLOBAL STEP: {self.state.global_step};{self.global_step}")
+        logger.info(
+            f"GLOBAL STEP: {self.state.global_step};{self.global_step}"
+        )
 
         output = {**logs, **{"step": self.state.global_step}}
         if "sleep_table" not in logs:
@@ -262,7 +272,9 @@ class CustomTrainer(Trainer):
         train_dataset = self.train_dataset.remove_columns("filename")  # type: ignore
 
         # check if using sleep mechanism w/ SleepSampler
-        if self.sleep_mechanism_cfg and isinstance(train_sampler, SleepSampler):
+        if self.sleep_mechanism_cfg and isinstance(
+            train_sampler, SleepSampler
+        ):
             return SleepDataLoader(
                 dataset=train_dataset,
                 sampler=train_sampler,
@@ -280,21 +292,23 @@ class CustomTrainer(Trainer):
                 batch_size=self._train_batch_size,
                 drop_last=self.args.dataloader_drop_last,
                 num_workers=0,
-                pin_memory=self.args.dataloader_pin_memory
+                pin_memory=self.args.dataloader_pin_memory,
             )
 
         assert (
             self.tokenizer is not None
         ), "Tokenizer is not set. Please set the tokenizer before calling the train method."
 
-    def compute_loss(self, 
-                     model, 
-                     inputs, 
-                     override_input_ids=None,
-                     override_labels=None,
-                     loss_kwargs=None,
-                     inference=False,
-                     **kwargs):
+    def compute_loss(
+        self,
+        model,
+        inputs,
+        override_input_ids=None,
+        override_labels=None,
+        loss_kwargs=None,
+        inference=False,
+        **kwargs,
+    ):
         """
         ~~We compute the loss for each objective unit, and then sum them up.~~
         We track the loss of each sample during WAKE phases to add to the replay buffer.
@@ -315,11 +329,13 @@ class CustomTrainer(Trainer):
         track_per_sample = (
             self.sleep_mechanism_cfg is not None
             and not inference
-            and hasattr(self, 'callback_handler')
-            and hasattr(self.callback_handler, 'train_dataloader')
+            and hasattr(self, "callback_handler")
+            and hasattr(self.callback_handler, "train_dataloader")
             and self.callback_handler.train_dataloader is not None
-            and hasattr(self.callback_handler.train_dataloader, 'sampler')
-            and hasattr(self.callback_handler.train_dataloader.sampler, 'phase')
+            and hasattr(self.callback_handler.train_dataloader, "sampler")
+            and hasattr(
+                self.callback_handler.train_dataloader.sampler, "phase"
+            )
             and self.callback_handler.train_dataloader.sampler.phase == "WAKE"
         )
         input_ids = (
@@ -329,37 +345,62 @@ class CustomTrainer(Trainer):
         )
         base_model_outputs = model(
             input_ids=input_ids,
-            attention_mask=inputs["attention_mask"]
-            if "attention_mask" in inputs
-            else None,
+            attention_mask=(
+                inputs["attention_mask"]
+                if "attention_mask" in inputs
+                else None
+            ),
         )
         base_model_hidden_states = base_model_outputs[0]
-        
+
         logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
             override_labels
             if override_labels is not None
             else inputs["labels"]
         )
-        
+
         # Compute the loss
         if track_per_sample:
-            # Compute per-sample loss for sleep mechanism replay buffer
-            # logger.info("Computing per-sample loss")
-            per_sample_loss = cross_entropy(logits, labels, reduction='none', **(loss_kwargs or {}))
+            # Per-sample loss for replay buffer tracking. Mean over unmasked
+            # positions of each sample (matches what the optimizer minimizes).
+            per_sample_loss = cross_entropy(
+                logits, labels, reduction="none", **(loss_kwargs or {})
+            )
             mask = (labels != -100).float()
-            # avgs across sequences - 1 loss per sample, for unmasked tokens
-            per_sample_loss = (per_sample_loss * mask).sum(dim=-1) / mask.sum(dim=-1).clamp(min=1)
-            # loss = per_sample_loss.mean()
-            # Add per-sample loss to sampler
+            per_sample_loss = (per_sample_loss * mask).sum(dim=-1) / mask.sum(
+                dim=-1
+            ).clamp(min=1)
+
+            # Per-sample squared gradient norms (Gain) for Gain x Need replay.
+            # torch.func.vmap forward+backward, separate from the optimizer's path.
+            gain_norms = None
+            if self.sleep_mechanism_cfg.replay_strategy == "utility":
+                grads_dict = per_sample_grads(
+                    unwrap_model(model),
+                    self.mlm_head,
+                    input_ids,
+                    inputs["attention_mask"],
+                    labels,
+                )
+                gain_norms = (
+                    per_sample_squared_grad_norms(grads_dict)
+                    .detach()
+                    .cpu()
+                    .tolist()
+                )
+
+            # Add per-sample loss (and Gain when computed) to sampler
             if "indices" in inputs:
-                indices = inputs['indices'].tolist()
+                indices = inputs["indices"].tolist()
                 losses = per_sample_loss.detach().cpu().tolist()
-                self.callback_handler.train_dataloader.sampler.add_to_candidates(indices, losses)
-        # else:
-            # logger.info("Computing loss")
+                self.callback_handler.train_dataloader.sampler.add_to_candidates(
+                    indices,
+                    losses,
+                    gain_norms=gain_norms,
+                )
         loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
-        if inference: # Return loss early if inference
+        if inference:  # Return loss early if inference
             return loss
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
@@ -367,13 +408,13 @@ class CustomTrainer(Trainer):
         if self.sleep_mechanism_cfg:
             curr_phase = self.callback_handler.train_dataloader.sampler.phase
             loss_metrics[f"loss_mlm_{curr_phase}"] = total_unit_loss_scalar
-            
+
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
         # incrementing here ensures we track one step per gradient update
         self.global_step += 1
         self.phase_steps += 1
-        
+
         if (
             self.args.logging_strategy == IntervalStrategy.STEPS
             and self.state.global_step % self.args.logging_steps == 0
@@ -381,7 +422,7 @@ class CustomTrainer(Trainer):
 
             self.log(loss_metrics)
         return loss
-    
+
     def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
 
@@ -393,17 +434,21 @@ class CustomTrainer(Trainer):
             phase_max = self.max_steps_per_phase[phase]
 
             if self.phase_steps >= phase_max:
-                if (phase == "WAKE"
-                and (self.sleep_mechanism_cfg.wake_block_steps 
-                     > sampler.wake_max_steps)):
-                    logger.info("WARNING: The selected WAKE phase max steps exceeds the size of the current fold. Ending WAKE phase early.")
+                if phase == "WAKE" and (
+                    self.sleep_mechanism_cfg.wake_block_steps
+                    > sampler.wake_max_steps
+                ):
+                    logger.info(
+                        "WARNING: The selected WAKE phase max steps exceeds the size of the current fold. Ending WAKE phase early."
+                    )
                 next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
                 self._swap_phase(sampler, phase, next_phase)
-        
+
         # Train task head
         self.mlm_optimizer.step()
         self.mlm_scheduler.step()
         self.mlm_head.zero_grad()
+
         return loss
 
     def evaluate(
@@ -539,7 +584,7 @@ class CustomTrainer(Trainer):
             # Get average of blimp metrics
             blimp_metrics = blimp_evaluator()
             evaluator_metrics.update(blimp_metrics)  # type: ignore
-            
+
         # BabyLM fast eval
         if self.eval_fast:
             logging.info("Evaluating on BabyLM Fast Evaluation...")
@@ -573,9 +618,9 @@ class CustomTrainer(Trainer):
 
         for key in list(evaluator_metrics.keys()):
             if not key.startswith(f"{metric_key_prefix}_"):
-                evaluator_metrics[
-                    f"{metric_key_prefix}_{key}"
-                ] = evaluator_metrics.pop(key)
+                evaluator_metrics[f"{metric_key_prefix}_{key}"] = (
+                    evaluator_metrics.pop(key)
+                )
 
         metrics.update(evaluator_metrics)
 
@@ -621,9 +666,7 @@ class CustomTrainer(Trainer):
             f"{lm_model.base_model_prefix}",
             unwrap_model(self.model.base_model),
         )
-        lm_model.lm_head = unwrap_model(
-            self.mlm_head
-        )
+        lm_model.lm_head = unwrap_model(self.mlm_head)
 
         return lm_model
 
@@ -646,8 +689,8 @@ class CustomTrainer(Trainer):
             # save step count
             step_file = os.path.join(output_dir, "trainer_state.json")
             # write current step count to file inside checkpoint folder
-            with open(step_file, 'w') as f:
-                json.dump({'global_step': self.global_step}, f)
+            with open(step_file, "w") as f:
+                json.dump({"global_step": self.global_step}, f)
 
             mlm_model_dir = os.path.join(output_dir, "lm_model")
             task_heads_dir = os.path.join(output_dir, "task_heads")
@@ -688,13 +731,17 @@ class CustomTrainer(Trainer):
         )
         self.mlm_optimizer.load_state_dict(
             torch.load(
-                os.path.join(task_head_dir, f"{self.task_unit_name}_optimizer.pt"),
+                os.path.join(
+                    task_head_dir, f"{self.task_unit_name}_optimizer.pt"
+                ),
                 map_location=self.args.device,
             )
         )
         self.mlm_scheduler.load_state_dict(
             torch.load(
-                os.path.join(task_head_dir, f"{self.task_unit_name}_scheduler.pt"),
+                os.path.join(
+                    task_head_dir, f"{self.task_unit_name}_scheduler.pt"
+                ),
                 map_location=self.args.device,
             )
         )
@@ -703,10 +750,9 @@ class CustomTrainer(Trainer):
         step_file = os.path.join(resume_from_checkpoint, "trainer_state.json")
         # reads from JSON file and restores step count
         if os.path.exists(step_file):
-            with open(step_file, 'r') as f:
+            with open(step_file, "r") as f:
                 state = json.load(f)
-                self.global_step = state.get('global_step', 0)
-
+                self.global_step = state.get("global_step", 0)
 
     def _load_best_model(self):
         super()._load_best_model()
@@ -716,9 +762,7 @@ class CustomTrainer(Trainer):
         )
         self.mlm_head.load_state_dict(
             torch.load(
-                os.path.join(
-                    task_head_dir, f"mlm_task_head.pt"
-                ),
+                os.path.join(task_head_dir, f"mlm_task_head.pt"),
                 map_location=self.args.device,
             )
         )
@@ -739,15 +783,15 @@ class CustomTrainer(Trainer):
         if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
             kwargs = {}
             if self.args.ddp_find_unused_parameters is not None:
-                kwargs[
-                    "find_unused_parameters"
-                ] = self.args.ddp_find_unused_parameters
+                kwargs["find_unused_parameters"] = (
+                    self.args.ddp_find_unused_parameters
+                )
             elif isinstance(model, PreTrainedModel):
                 # find_unused_parameters breaks checkpointing as per
                 # https://github.com/huggingface/transformers/pull/4659#issuecomment-643356021
-                kwargs[
-                    "find_unused_parameters"
-                ] = not model.is_gradient_checkpointing
+                kwargs["find_unused_parameters"] = (
+                    not model.is_gradient_checkpointing
+                )
             else:
                 kwargs["find_unused_parameters"] = True
 
@@ -758,67 +802,70 @@ class CustomTrainer(Trainer):
             if any(p.requires_grad for p in model.parameters()):
                 model = nn.parallel.DistributedDataParallel(
                     model,
-                    device_ids=[self.args.local_rank]
-                    if self.args._n_gpu != 0
-                    else None,
-                    output_device=self.args.local_rank
-                    if self.args._n_gpu != 0
-                    else None,
+                    device_ids=(
+                        [self.args.local_rank]
+                        if self.args._n_gpu != 0
+                        else None
+                    ),
+                    output_device=(
+                        self.args.local_rank if self.args._n_gpu != 0 else None
+                    ),
                     broadcast_buffers=False,
                     **kwargs,
                 )
 
         return model
-        
+
     def train(self, *args, resume_from_checkpoint=None, **kwargs):
         """
         Override train to re-intialize phase steps.
         """
         self.phase_steps = 0
-        return super().train(resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs) #CHANGED from super().super().train to super().train
-    
-    def _swap_phase(self, 
-                    sampler: SleepSampler,
-                    phase:str, 
-                    next_phase:str):
+        return super().train(
+            resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs
+        )  # CHANGED from super().super().train to super().train
+
+    def _swap_phase(self, sampler: SleepSampler, phase: str, next_phase: str):
         logger.info("Ending %s phase...", phase)
         self.phase_steps = 0
         # eval before sleep
         logger.info("Running evaluation before %s phase...", next_phase)
         self.evaluate(metric_key_prefix=f"eval_before_{next_phase}")
-        
+
         if next_phase == "WAKE":
             # On switching to wake phase, build and log the sleep table
             logger.info("Logging replay samples...")
-            
+
             samples, losses = list(zip(*sampler.get_replay_samples(10)))
             sample_ids = [samp["input_ids"] for samp in samples]
             sample_texts = "\n\n".join(
-                [f"{i}: {self.tokenizer.decode(ids)}" for i, ids in enumerate(sample_ids)]
+                [
+                    f"{i}: {self.tokenizer.decode(ids)}"
+                    for i, ids in enumerate(sample_ids)
+                ]
             )
-            
+
             self.sleep_table.add_data(
-                self.global_step, # global_step
-                self.phase_steps, # phase_step
-                sampler.curr_fold, # phase_num
-                sample_texts, # replay_samples
+                self.global_step,  # global_step
+                self.phase_steps,  # phase_step
+                sampler.curr_fold,  # phase_num
+                sample_texts,  # replay_samples
                 # losses # losses
             )
             _sleep_table = Table(
-                columns=self.sleep_table.columns,
-                data=self.sleep_table.data
+                columns=self.sleep_table.columns, data=self.sleep_table.data
             )
-            self.log({
-                "sleep_table": _sleep_table
-            })
-        
+            self.log({"sleep_table": _sleep_table})
+
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
         if next_phase == "SLEEP":
             logger.info("Contextualize?: %s", sampler.contextualize_sleep)
             logger.info("num candidates: %d", len(sampler.wake_candidates))
             logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
-            
-        logger.info(f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}")
+
+        logger.info(
+            f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}"
+        )
         logger.info("Rebuilding train dataloader...")
         self._train_dataloader = None
