@@ -67,6 +67,7 @@ from src.utils.per_sample_grad import (
 )
 from src.data_curriculum.utility_scoring import compute_need_scores
 from src.data_curriculum.contextualize_collate import context_augmented_collate
+from src.synaptic_homeostasis import apply_fisher_protected_shrink
 from wandb import Table
 
 # typing imports
@@ -127,6 +128,23 @@ class CustomTrainer(Trainer):
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
         self.max_steps_per_phase = max_steps_per_phase
+
+        # Plasticity decay state (Method 2: online empirical Fisher protection).
+        # Synaptic-Intelligence-style: Fisher is accumulated during wake at the
+        # moving theta of training, not at a fixed end-of-wake snapshot. This is
+        # a deliberate deviation from strict EWC; SI (Zenke 2017) is the citation.
+        self._plasticity_decay_enabled = bool(
+            self.sleep_mechanism_cfg
+            and self.sleep_mechanism_cfg.plasticity_decay is not None
+            and self.sleep_mechanism_cfg.plasticity_decay.enabled
+        )
+        # Fisher accumulator built during wake; finalized at WAKE->SLEEP.
+        self.fisher_accumulator: Optional[Dict[str, torch.Tensor]] = None
+        self.fisher_sample_count = 0
+        # Finalized empirical Fisher diagonal, consumed by SLEEP->WAKE shrink.
+        # Last cycle's Fisher is never consumed (no SLEEP->WAKE after the final
+        # WAKE->SLEEP); held memory is reclaimed at process exit.
+        self.fisher_diagonal: Optional[Dict[str, torch.Tensor]] = None
 
         self.phase_steps = 0
 
@@ -375,10 +393,15 @@ class CustomTrainer(Trainer):
                 dim=-1
             ).clamp(min=1)
 
-            # Per-sample squared gradient norms (Gain) for Gain x Need replay.
-            # torch.func.vmap forward+backward, separate from the optimizer's path.
+            # Per-sample squared gradient norms (Gain) for Gain x Need replay
+            # AND/OR online empirical Fisher accumulation for plasticity decay.
+            # One torch.func.vmap pass produces grads consumed by both methods.
+            need_per_sample_grads = (
+                self.sleep_mechanism_cfg.replay_strategy == "utility"
+                or self._plasticity_decay_enabled
+            )
             gain_norms = None
-            if self.sleep_mechanism_cfg.replay_strategy == "utility":
+            if need_per_sample_grads:
                 grads_dict = per_sample_grads(
                     unwrap_model(model),
                     self.mlm_head,
@@ -386,12 +409,15 @@ class CustomTrainer(Trainer):
                     inputs["attention_mask"],
                     labels,
                 )
-                gain_norms = (
-                    per_sample_squared_grad_norms(grads_dict)
-                    .detach()
-                    .cpu()
-                    .tolist()
-                )
+                if self.sleep_mechanism_cfg.replay_strategy == "utility":
+                    gain_norms = (
+                        per_sample_squared_grad_norms(grads_dict)
+                        .detach()
+                        .cpu()
+                        .tolist()
+                    )
+                if self._plasticity_decay_enabled:
+                    self._accumulate_fisher(grads_dict)
 
             # Add per-sample loss (and Gain when computed) to sampler
             if "indices" in inputs:
@@ -878,6 +904,10 @@ class CustomTrainer(Trainer):
                 batch_size=self.args.per_device_train_batch_size,
             )
 
+        # Finalize Fisher diagonal from the wake phase that just ended.
+        if next_phase == "SLEEP" and self._plasticity_decay_enabled:
+            self._finalize_fisher()
+
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
         if next_phase == "SLEEP":
@@ -885,8 +915,66 @@ class CustomTrainer(Trainer):
             logger.info("num candidates: %d", len(sampler.wake_candidates))
             logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
 
+        # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
+        if next_phase == "WAKE" and self._plasticity_decay_enabled:
+            self._apply_fisher_shrink()
+
         logger.info(
             f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}"
         )
         logger.info("Rebuilding train dataloader...")
         self._train_dataloader = None
+
+    def _accumulate_fisher(self, grads_dict: Dict[str, torch.Tensor]) -> None:
+        """Add this batch's squared per-sample gradients to the Fisher running totals."""
+        if self.fisher_accumulator is None:
+            self.fisher_accumulator = {
+                name: torch.zeros(g.shape[1:], device=g.device, dtype=g.dtype)
+                for name, g in grads_dict.items()
+            }
+        batch_size = next(iter(grads_dict.values())).shape[0]
+        for name, g in grads_dict.items():
+            # g: [B, *param_shape]; square and sum across the batch.
+            self.fisher_accumulator[name].add_((g * g).sum(dim=0).detach())
+        self.fisher_sample_count += batch_size
+
+    def _finalize_fisher(self) -> None:
+        """Divide accumulated squared gradients by the sample count to get Fisher diagonal."""
+        if self.fisher_accumulator is None or self.fisher_sample_count == 0:
+            logger.warning(
+                "Plasticity decay enabled but Fisher accumulator empty at "
+                "WAKE->SLEEP; skipping finalization."
+            )
+            return
+        count = self.fisher_sample_count
+        self.fisher_diagonal = {
+            name: tensor / count
+            for name, tensor in self.fisher_accumulator.items()
+        }
+        self.fisher_accumulator = None
+        self.fisher_sample_count = 0
+        logger.info(
+            "Finalized Fisher diagonal over %d samples across %d params.",
+            count,
+            len(self.fisher_diagonal),
+        )
+
+    def _apply_fisher_shrink(self) -> None:
+        """Apply Fisher-protected multiplicative shrink at SLEEP->WAKE."""
+        if self.fisher_diagonal is None:
+            logger.warning(
+                "Plasticity decay enabled but no Fisher diagonal available "
+                "at SLEEP->WAKE; skipping shrink."
+            )
+            return
+        cfg = self.sleep_mechanism_cfg.plasticity_decay
+        apply_fisher_protected_shrink(
+            fisher=self.fisher_diagonal,
+            modules={
+                "model": unwrap_model(self.model),
+                "mlm_head": self.mlm_head,
+            },
+            shrink_factor=cfg.shrink_factor,
+            protect_top_fraction=cfg.protect_top_fraction,
+        )
+        self.fisher_diagonal = None
