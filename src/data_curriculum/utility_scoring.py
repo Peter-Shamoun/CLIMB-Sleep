@@ -11,7 +11,7 @@ training samples is "representative" of the dataset.
 """
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import faiss
 import numpy as np
@@ -122,10 +122,14 @@ def sample_utility_indices(
     num_replay: int,
     temperature_gain: float = 1.0,
     temperature_need: float = 1.0,
-) -> List[int]:
+) -> Tuple[List[int], Dict[str, float]]:
     """Sample replay indices proportional to softmax(Gain/T_G) * softmax(Need/T_N).
 
     Both score dicts must have identical key sets (the wake-fold candidate pool).
+    Returns ``(sampled_indices, diagnostics)``. The diagnostics dict carries
+    distribution-shape signals (ranges, max probs, entropies, candidate count)
+    that the trainer logs to WandB so degenerate temperatures are visible
+    on the run page rather than only in stderr warnings.
     """
     if not gain_scores:
         raise ValueError("gain_scores is empty; cannot sample utility buffer")
@@ -166,4 +170,23 @@ def sample_utility_indices(
     sampled = torch.multinomial(
         utility, num_samples=num_replay, replacement=False
     )
-    return [keys[i] for i in sampled.tolist()]
+
+    diagnostics = {
+        "gain_range": float(gain_t.max() - gain_t.min()),
+        "gain_probs_max": float(gain_probs.max()),
+        "gain_probs_entropy": _entropy(gain_probs),
+        "need_range": float(need_t.max() - need_t.min()),
+        "need_probs_max": float(need_probs.max()),
+        "need_probs_entropy": _entropy(need_probs),
+        "nontrivial_count": nontrivial,
+        "total_candidates": len(keys),
+    }
+    return [keys[i] for i in sampled.tolist()], diagnostics
+
+
+def _entropy(probs: Tensor) -> float:
+    """NaN-safe Shannon entropy (natural log) of a discrete probability vector."""
+    # Replace zero entries with 1 before log so 0 * log(0) -> 0 * log(1) = 0,
+    # avoiding NaN. Multiplication by probs keeps the masked terms at zero.
+    safe = torch.where(probs > 0, probs, torch.ones_like(probs))
+    return float(-(probs * safe.log()).sum())

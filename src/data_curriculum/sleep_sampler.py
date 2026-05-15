@@ -1,8 +1,8 @@
-from numpy import random
 import math
-from typing import Iterator, List, Optional, Tuple, Sequence
+from typing import List, Optional
 
 import torch
+from numpy import random
 from torch.utils.data import Dataset, Sampler
 
 from src.data_curriculum.utility_scoring import sample_utility_indices
@@ -64,6 +64,9 @@ class SleepSampler(Sampler):
         self.wake_gain: dict[int, float] = {}
         # Need scores: set by the trainer at end of wake before switch_phase("SLEEP").
         self.need_scores: dict[int, float] = {}
+        # Last utility-distribution diagnostics, set by update_replay_buffer when
+        # replay_strategy == "utility" so the trainer can log them to WandB.
+        self.last_utility_diagnostics: Optional[dict] = None
         # Utility-replay temperatures (only consulted when replay_strategy == "utility")
         self.utility_temperature_gain = utility_temperature_gain
         self.utility_temperature_need = utility_temperature_need
@@ -267,13 +270,15 @@ class SleepSampler(Sampler):
             # Utility pool is wake_gain (current-fold samples with fresh Gain),
             # not wake_candidates (which carries decayed losses across cycles).
             num_replay = int(len(self.wake_gain) * self.replay_ratio)
-            self.replay_buffer = sample_utility_indices(
+            sampled, diagnostics = sample_utility_indices(
                 gain_scores=self.wake_gain,
                 need_scores=self.need_scores,
                 num_replay=num_replay,
                 temperature_gain=self.utility_temperature_gain,
                 temperature_need=self.utility_temperature_need,
             )
+            self.replay_buffer = sampled
+            self.last_utility_diagnostics = diagnostics
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()
 
