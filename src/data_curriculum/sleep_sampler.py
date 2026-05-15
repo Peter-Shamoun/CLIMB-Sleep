@@ -63,9 +63,9 @@ class SleepSampler(Sampler):
         self.wake_candidates: dict[int, tuple(float, float)] = {}
         # Stores {index: squared gradient norm} during wake for Gain x Need replay.
         # Populated by add_to_candidates when the trainer computes per-sample grads.
-        self.wake_gain: dict[int, float] = {}
+        # self.wake_gain: dict[int, float] = {}
         # Need scores: set by the trainer at end of wake before switch_phase("SLEEP").
-        self.need_scores: dict[int, float] = {}
+        # self.need_scores: dict[int, float] = {}
         # Last utility-distribution diagnostics, set by update_replay_buffer when
         # replay_strategy == "utility" so the trainer can log them to WandB.
         self.last_utility_diagnostics: Optional[dict] = None
@@ -124,14 +124,14 @@ class SleepSampler(Sampler):
     def add_to_candidates(
         self,
         indices: List[int],
-        losses: List[float],
+        scores: List[float],
         gain_norms: Optional[List[float]] = None,
     ):
         """
-        Add indices, losses, and optional Gain scores to the candidate buffer during WAKE.
+        Add indices, replay scores, and optional Gain scores to the candidate buffer during WAKE.
         Args:
             indices: List of sample indices.
-            losses: List of per-sample loss values.
+            scores: List of per-sample loss values.
             gain_norms: Optional list of per-sample squared gradient norms (Gain).
                 Required when replay_strategy == "utility"; ignored otherwise.
         """
@@ -144,19 +144,19 @@ class SleepSampler(Sampler):
                 indices
             ), "gain_norms must have same length as indices"
 
-        for i, (idx, loss) in enumerate(zip(indices, losses)):
+        for idx, score in zip(indices, scores):
             # Store or update with max loss seen for this index
-            loss_val = float(loss)
+            score = float(score)
             if idx in self.wake_candidates:
                 # Keep the lower loss if we've seen this sample before
-                curr_loss, curr_decay_factor = self.wake_candidates[idx]
-                self.wake_candidates[idx] = (min(curr_loss, loss_val), curr_decay_factor)
+                curr_score, curr_decay_factor = self.wake_candidates[idx]
+                self.wake_candidates[idx] = (min(curr_score, score), curr_decay_factor)
             else:
-                self.wake_candidates[idx] = (loss_val, 1.0)
-            if gain_norms is not None:
-                # Latest-seen Gain. Repeats within a single wake cycle are rare
-                # (each fold is iterated at most once per cycle).
-                self.wake_gain[idx] = float(gain_norms[i])
+                self.wake_candidates[idx] = (score, 1.0)
+            # if gain_norms is not None:
+            #     # Latest-seen Gain. Repeats within a single wake cycle are rare
+            #     # (each fold is iterated at most once per cycle).
+            #     self.wake_gain[idx] = float(gain_norms[i])
 
     def switch_phase(self, new_phase: str):
         """
@@ -188,8 +188,8 @@ class SleepSampler(Sampler):
             self.decay_wake_candidates()
             # Gain values are model-state-dependent; stale norms from earlier cycles
             # would bias selection. Clear fully rather than decay.
-            self.wake_gain = {}
-            self.need_scores = {}
+            # self.wake_gain = {}
+            # self.need_scores = {}
             self.contextualized_chunks = []
             # Increment fold tracker and re-init max steps
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
@@ -233,17 +233,17 @@ class SleepSampler(Sampler):
         """
         num_replay = int(len(self.wake_candidates.keys()) * self.replay_ratio)
         if self.replay_strategy == "strict":
-            # Sort wake candidates by loss
+            # Sort wake candidates by replay score
             sorted_candidates = sorted(
                 self.wake_candidates.items(),
                 key=lambda item: item[1][0] * item[1][1],
                 reverse=True,
             )
             self.replay_buffer = [
-                idx for idx, loss in sorted_candidates[:num_replay]
+                idx for idx, score in sorted_candidates[:num_replay]
             ]
         elif self.replay_strategy == "weighted":
-            # Sample from wake candidates weighted by loss
+            # Sample from wake candidates weighted by replay score
             candidate_indices = list(self.wake_candidates.keys())
             candidate_replay_scores = torch.prod(torch.tensor(
                 list(zip(*self.wake_candidates.values()))
@@ -255,32 +255,32 @@ class SleepSampler(Sampler):
                 candidate_indices[i] for i in sampled_indices
             ]
         elif self.replay_strategy == "random":
-            # Randomly sample from wake candidates
+            # Uniformly randomly sample from wake candidates
             candidate_indices = list(self.wake_candidates.keys())
             self.replay_buffer = list(
                 np.random.choice(
                     candidate_indices, size=num_replay, replace=False
                 )
             )
-        elif self.replay_strategy == "utility":
-            assert (
-                self.wake_gain
-            ), "Gain dict empty; trainer should populate via add_to_candidates"
-            assert (
-                self.need_scores
-            ), "Need dict empty; trainer should set before switch_phase('SLEEP')"
-            # Utility pool is wake_gain (current-fold samples with fresh Gain),
-            # not wake_candidates (which carries decayed losses across cycles).
-            num_replay = int(len(self.wake_gain) * self.replay_ratio)
-            sampled, diagnostics = sample_utility_indices(
-                gain_scores=self.wake_gain,
-                need_scores=self.need_scores,
-                num_replay=num_replay,
-                temperature_gain=self.utility_temperature_gain,
-                temperature_need=self.utility_temperature_need,
-            )
-            self.replay_buffer = sampled
-            self.last_utility_diagnostics = diagnostics
+        # elif self.replay_strategy == "utility":
+        #     assert (
+        #         self.wake_gain
+        #     ), "Gain dict empty; trainer should populate via add_to_candidates"
+        #     assert (
+        #         self.need_scores
+        #     ), "Need dict empty; trainer should set before switch_phase('SLEEP')"
+        #     # Utility pool is wake_gain (current-fold samples with fresh Gain),
+        #     # not wake_candidates (which carries decayed losses across cycles).
+        #     num_replay = int(len(self.wake_gain) * self.replay_ratio)
+        #     sampled, diagnostics = sample_utility_indices(
+        #         gain_scores=self.wake_gain,
+        #         need_scores=self.need_scores,
+        #         num_replay=num_replay,
+        #         temperature_gain=self.utility_temperature_gain,
+        #         temperature_need=self.utility_temperature_need,
+        #     )
+        #     self.replay_buffer = sampled
+        #     self.last_utility_diagnostics = diagnostics
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()
 
@@ -317,3 +317,21 @@ class SleepSampler(Sampler):
             for idx in return_idxs
         ]
         return result
+    
+    def update_utility_scores(self, need_scores: dict[int, float]):
+        """Updates stored gain scores to become utility scores with calculated need scores.
+
+        Args:
+            need_scores (dict[int, float]): mapping of sample idx to need score.
+        """
+        gains, _ = zip(*self.wake_candidates.values())
+        gain_softmax_denom = np.exp(np.array(gains)).sum()
+        needs_softmax_denom = np.exp(np.array(need_scores.values())).sum()
+        # calculate softmaxes to put both on the same scale
+        for idx, need in need_scores.items():
+            gain, decay_factor = self.wake_candidates[idx]
+            sm_gain = np.exp(gain) / gain_softmax_denom
+            sm_need = np.exp(need) / needs_softmax_denom
+            utility_score = sm_gain * sm_need
+            self.wake_candidates[idx] = (utility_score, decay_factor)
+                
