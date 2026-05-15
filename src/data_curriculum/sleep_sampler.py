@@ -1,3 +1,4 @@
+import numpy as np
 import math
 from typing import List, Optional
 
@@ -18,11 +19,12 @@ class SleepSampler(Sampler):
         self,
         dataset: Dataset,
         batch_size: int,
-        replay_ratio: float = 0.1,
-        n_phases: int = 5,
+        replay_ratio: float=0.1,
+        n_phases: int=5,
         n_augmentations=40,
         max_seq_length: int = 128,
-        decay_rate: float = 0.7,
+        decay_rate: float = 0.3,
+        min_decay_factor: float = 0.2,
         contextualize_sleep: bool = True,
         replay_strategy: str = "weighted",
         utility_temperature_gain: float = 1.0,
@@ -57,8 +59,8 @@ class SleepSampler(Sampler):
             replay_strategy  # choice of "loss", "random", "loss_weighted"
         )
         self.replay_buffer: List[int] = []  # Stores indices for sleep
-        # Stores {index: replay score} during wake to determine difficulty
-        self.wake_candidates: dict[int, float] = {}
+        # Stores {index: (replay score, decay_factor)} during wake to determine difficulty
+        self.wake_candidates: dict[int, tuple(float, float)] = {}
         # Stores {index: squared gradient norm} during wake for Gain x Need replay.
         # Populated by add_to_candidates when the trainer computes per-sample grads.
         self.wake_gain: dict[int, float] = {}
@@ -70,11 +72,12 @@ class SleepSampler(Sampler):
         # Utility-replay temperatures (only consulted when replay_strategy == "utility")
         self.utility_temperature_gain = utility_temperature_gain
         self.utility_temperature_need = utility_temperature_need
-        self.decay_rate = decay_rate  # decays replay chance so that older data is less likely to be sampled
+        self.decay_rate = decay_rate # decays replay score so that older data is less likely to be sampled
+        self.min_decay_factor = min_decay_factor # clamps decay rate so that older samples are not completely forgotten
 
         self.phase = "WAKE"
         self.dataset_indices = list(range(len(dataset)))  # type: ignore
-        random.shuffle(self.dataset_indices)
+        np.random.shuffle(self.dataset_indices)
 
         # Split indices into n_phases folds
         self.curr_fold = 0
@@ -146,11 +149,10 @@ class SleepSampler(Sampler):
             loss_val = float(loss)
             if idx in self.wake_candidates:
                 # Keep the lower loss if we've seen this sample before
-                self.wake_candidates[idx] = min(
-                    self.wake_candidates[idx], loss_val
-                )
+                curr_loss, curr_decay_factor = self.wake_candidates[idx]
+                self.wake_candidates[idx] = (min(curr_loss, loss_val), curr_decay_factor)
             else:
-                self.wake_candidates[idx] = loss_val
+                self.wake_candidates[idx] = (loss_val, 1.0)
             if gain_norms is not None:
                 # Latest-seen Gain. Repeats within a single wake cycle are rare
                 # (each fold is iterated at most once per cycle).
@@ -214,7 +216,7 @@ class SleepSampler(Sampler):
         for _ in range(self.n_augmentations):
             # shuffle replay buffer differently each time
             shuffled = self.replay_buffer.copy()
-            random.shuffle(shuffled)
+            np.random.shuffle(shuffled)
             all_orderings.append(shuffled)
 
         # flatten: convert list of orderings into individual indices
@@ -234,7 +236,7 @@ class SleepSampler(Sampler):
             # Sort wake candidates by loss
             sorted_candidates = sorted(
                 self.wake_candidates.items(),
-                key=lambda item: item[1],
+                key=lambda item: item[1][0] * item[1][1],
                 reverse=True,
             )
             self.replay_buffer = [
@@ -243,11 +245,11 @@ class SleepSampler(Sampler):
         elif self.replay_strategy == "weighted":
             # Sample from wake candidates weighted by loss
             candidate_indices = list(self.wake_candidates.keys())
-            candidate_losses = torch.tensor(
-                list(self.wake_candidates.values())
-            )
+            candidate_replay_scores = torch.prod(torch.tensor(
+                list(zip(*self.wake_candidates.values()))
+            ), dim=0)
             sampled_indices = torch.multinomial(
-                candidate_losses, num_samples=num_replay, replacement=False
+                candidate_replay_scores, num_samples=num_replay, replacement=False
             ).tolist()
             self.replay_buffer = [
                 candidate_indices[i] for i in sampled_indices
@@ -256,7 +258,7 @@ class SleepSampler(Sampler):
             # Randomly sample from wake candidates
             candidate_indices = list(self.wake_candidates.keys())
             self.replay_buffer = list(
-                random.choice(
+                np.random.choice(
                     candidate_indices, size=num_replay, replace=False
                 )
             )
@@ -289,8 +291,10 @@ class SleepSampler(Sampler):
         return math.ceil(len(self.folds[self.curr_fold]) / self.batch_size)
 
     def decay_wake_candidates(self):
-        for idx, prob in self.wake_candidates.items():
-            self.wake_candidates[idx] = prob * self.decay_rate
+        for idx, candidate in self.wake_candidates.items():
+            curr_loss, curr_decay_factor = candidate
+            new_decay_factor = max(curr_decay_factor * (1 - self.decay_rate), self.min_decay_factor)
+            self.wake_candidates[idx] = (curr_loss, new_decay_factor)
 
     def get_replay_samples(self, num_samples=-1):
         """Returns a random selection of samples from the replay buffer for analysis.
@@ -307,7 +311,7 @@ class SleepSampler(Sampler):
             return None
         if num_samples < 0:
             return self.replay_buffer.copy()
-        return_idxs = list(random.choice(self.replay_buffer, num_samples))
+        return_idxs = list(np.random.choice(self.replay_buffer, num_samples))
         result = [
             (self.dataset[int(idx)], self.wake_candidates[idx])
             for idx in return_idxs
