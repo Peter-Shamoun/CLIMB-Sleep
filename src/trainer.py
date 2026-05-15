@@ -214,10 +214,10 @@ class CustomTrainer(Trainer):
                     n_phases=self.sleep_mechanism_cfg.n_phases,
                     max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
                     decay_rate=self.sleep_mechanism_cfg.replay_decay_rate,
+                    min_decay_factor=self.sleep_mechanism_cfg.min_decay_factor,
                     contextualize_sleep=self.sleep_mechanism_cfg.contextualize_sleep,
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
                     replay_strategy=self.sleep_mechanism_cfg.replay_strategy,
-                    decay_rate=self.sleep_mechanism_cfg.replay_decay_rate,
                     utility_temperature_gain=self.sleep_mechanism_cfg.utility_temperature_gain,
                     utility_temperature_need=self.sleep_mechanism_cfg.utility_temperature_need,
                 )
