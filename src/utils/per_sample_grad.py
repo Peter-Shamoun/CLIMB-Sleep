@@ -10,15 +10,15 @@ as separate nn.Modules. Inputs come from a normal MLM batch:
     attention_mask:  [B, S]
     labels:          [B, S]  (-100 at non-masked positions, per the trainer)
 
-The per-sample loss is ``cross_entropy(logits, labels)`` with default mean
-reduction -- the standard MLM loss averaged over unmasked positions of each
-sample. This matches what the optimizer is minimizing on a per-sample basis,
-so Gain = ||grad||^2 is a first-order Taylor estimate of expected loss drop.
+The per-sample loss is the MLM loss averaged over the unmasked positions of
+each sample, using a clamped denominator so a sample with zero unmasked
+positions yields loss 0 (and therefore zero gradient) instead of NaN. This
+matches the trainer's compute_loss formulation, so Gain = ||grad||^2 is a
+first-order Taylor estimate of expected loss drop on a per-sample basis.
 """
 
 from typing import Dict
 
-import torch
 from torch import Tensor
 from torch.func import functional_call, grad, vmap
 from torch.nn import Module
@@ -65,7 +65,12 @@ def per_sample_grads(
             (head_p, head_b),
             args=(hidden,),
         ).transpose(-1, -2)
-        return cross_entropy(logits, y_b)
+        # Mean over unmasked positions with clamp(min=1). All-(-100) samples
+        # would otherwise produce 0/0 = NaN here, propagating into the
+        # per-sample gradient and contaminating Gain + Fisher.
+        per_token = cross_entropy(logits, y_b, reduction="none")
+        mask = (y_b != -100).float()
+        return (per_token * mask).sum() / mask.sum().clamp(min=1)
 
     grad_fn = grad(loss_fn, argnums=(0, 1))
     # randomness='different' so dropout (or any RNG op) gets an independent mask per

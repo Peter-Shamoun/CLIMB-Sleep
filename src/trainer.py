@@ -1,26 +1,17 @@
 """ Main trainer class for BabyLM. """
 
 import copy
+import json
 import logging
 import os
-import shutil
 import time
-import math
-from pathlib import Path
-from typing import Dict, List, Optional, Union
-import json
+from typing import Dict, Optional
 
 import torch
-from torch import Tensor, device
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.functional import cross_entropy
 from torch.optim import AdamW
-from huggingface_hub.hf_api import create_repo
-
-# from huggingface_hub.repository import Repository
-# from huggingface_hub.utils._errors import HfHubHTTPError
-from omegaconf import OmegaConf
 
 # Data loading
 from torch.utils.data import DataLoader, RandomSampler
@@ -30,22 +21,11 @@ from tqdm import tqdm
 # Model Training
 from transformers import (
     PreTrainedTokenizerFast,
-    Trainer,
-    TrainerCallback,
-    DataCollatorForLanguageModeling,
     RobertaConfig,
+    Trainer,
     get_linear_schedule_with_warmup,
 )
-from transformers.utils import is_torch_neuroncore_available
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
-from transformers.trainer_callback import TrainerControl, TrainerState
-from transformers.trainer_utils import (
-    HubStrategy,
-    IntervalStrategy,
-    has_length,
-    speed_metrics,
-)
-from transformers.training_args import ParallelMode, TrainingArguments
 
 # from transformers.utils import (
 #     get_full_repo_name,
@@ -54,21 +34,26 @@ from transformers.training_args import ParallelMode, TrainingArguments
 from transformers.models.roberta_prelayernorm.modeling_roberta_prelayernorm import (
     RobertaPreLayerNormLMHead,
 )
+from transformers.trainer_utils import (
+    IntervalStrategy,
+    has_length,
+    speed_metrics,
+)
+from transformers.training_args import ParallelMode, TrainingArguments
+from transformers.utils import is_torch_neuroncore_available
+from wandb import Table
+
+from src.data_curriculum.utility_scoring import compute_need_scores
 
 # Model Loading
 from src.models import load_base_model
+from src.synaptic_homeostasis import apply_fisher_protected_shrink
 from src.utils.data import base_collate_fn
-from src.utils.inference import (
-    compute_trainer_perplexity,
-)
+from src.utils.inference import compute_trainer_perplexity
 from src.utils.per_sample_grad import (
     per_sample_grads,
     per_sample_squared_grad_norms,
 )
-from src.data_curriculum.utility_scoring import compute_need_scores
-from src.data_curriculum.contextualize_collate import context_augmented_collate
-from src.synaptic_homeostasis import apply_fisher_protected_shrink
-from wandb import Table
 
 # typing imports
 from .config import BabyLMConfig
@@ -80,7 +65,11 @@ from .data_curriculum.sleep_sampler import SleepSampler
 from .dataloader import SleepDataLoader
 
 # Model Evaluation
-from .evaluator import BlimpEvaluator, FinetuneEvaluator, BabyLMEvaluator
+from .evaluator import BabyLMEvaluator, BlimpEvaluator, FinetuneEvaluator
+
+# from huggingface_hub.repository import Repository
+# from huggingface_hub.utils._errors import HfHubHTTPError
+
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +217,7 @@ class CustomTrainer(Trainer):
                     contextualize_sleep=self.sleep_mechanism_cfg.contextualize_sleep,
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
                     replay_strategy=self.sleep_mechanism_cfg.replay_strategy,
+                    decay_rate=self.sleep_mechanism_cfg.replay_decay_rate,
                     utility_temperature_gain=self.sleep_mechanism_cfg.utility_temperature_gain,
                     utility_temperature_need=self.sleep_mechanism_cfg.utility_temperature_need,
                 )
@@ -851,9 +841,17 @@ class CustomTrainer(Trainer):
         Override train to re-intialize phase steps.
         """
         self.phase_steps = 0
-        return super().train(
-            resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs
-        )  # CHANGED from super().super().train to super().train
+        try:
+            return super().train(
+                resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs
+            )  # CHANGED from super().super().train to super().train
+        finally:
+            # The final WAKE->SLEEP finalizes a Fisher diagonal that is never
+            # consumed (no SLEEP->WAKE follows). Release it explicitly so the
+            # ~57 MB it occupies for the default model is not held until exit.
+            self.fisher_diagonal = None
+            self.fisher_accumulator = None
+            self.fisher_sample_count = 0
 
     def _swap_phase(self, sampler: SleepSampler, phase: str, next_phase: str):
         logger.info("Ending %s phase...", phase)
@@ -915,6 +913,9 @@ class CustomTrainer(Trainer):
             logger.info("Contextualize?: %s", sampler.contextualize_sleep)
             logger.info("num candidates: %d", len(sampler.wake_candidates))
             logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
+            diag = getattr(sampler, "last_utility_diagnostics", None)
+            if diag is not None:
+                self.log({f"utility/{k}": v for k, v in diag.items()})
 
         # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
         if next_phase == "WAKE" and self._plasticity_decay_enabled:
@@ -928,15 +929,31 @@ class CustomTrainer(Trainer):
 
     def _accumulate_fisher(self, grads_dict: Dict[str, torch.Tensor]) -> None:
         """Add this batch's squared per-sample gradients to the Fisher running totals."""
+        # Defensive: a non-finite per-sample gradient would silently poison the
+        # accumulator for the rest of the wake phase. Compute squared sums
+        # first, check finiteness across all params, and skip the whole batch
+        # if any are non-finite.
+        squared = {}
+        for name, g in grads_dict.items():
+            # g: [B, *param_shape]; square and sum across the batch.
+            squared[name] = (g * g).sum(dim=0).detach()
+        for name, s in squared.items():
+            if not torch.isfinite(s).all():
+                logger.warning(
+                    "Non-finite Fisher contribution at param '%s'; "
+                    "skipping this batch (accumulator and sample count unchanged).",
+                    name,
+                )
+                return
+
         if self.fisher_accumulator is None:
             self.fisher_accumulator = {
                 name: torch.zeros(g.shape[1:], device=g.device, dtype=g.dtype)
                 for name, g in grads_dict.items()
             }
         batch_size = next(iter(grads_dict.values())).shape[0]
-        for name, g in grads_dict.items():
-            # g: [B, *param_shape]; square and sum across the batch.
-            self.fisher_accumulator[name].add_((g * g).sum(dim=0).detach())
+        for name, s in squared.items():
+            self.fisher_accumulator[name].add_(s)
         self.fisher_sample_count += batch_size
 
     def _finalize_fisher(self) -> None:
