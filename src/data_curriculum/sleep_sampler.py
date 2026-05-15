@@ -264,6 +264,9 @@ class SleepSampler(Sampler):
             assert (
                 self.need_scores
             ), "Need dict empty; trainer should set before switch_phase('SLEEP')"
+            # Utility pool is wake_gain (current-fold samples with fresh Gain),
+            # not wake_candidates (which carries decayed losses across cycles).
+            num_replay = int(len(self.wake_gain) * self.replay_ratio)
             self.replay_buffer = sample_utility_indices(
                 gain_scores=self.wake_gain,
                 need_scores=self.need_scores,
