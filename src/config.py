@@ -192,6 +192,8 @@ class SleepMechanismParams(DictConfig):
     replay_strategy: str = "weighted"
     # Decay rate for wake candidates from previous phases
     replay_decay_rate: float = 0.7
+    # Minimum decay factor, to ensure older samples are never completely removed from consideration.
+    min_decay_factor: float = 0.2
     # Number of context augmentations applied per batch
     n_augmentations: int = 40
     # Number of wake-sleep cycles
