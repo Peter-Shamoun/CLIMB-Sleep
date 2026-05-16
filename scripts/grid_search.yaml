@@ -9,8 +9,6 @@ metric:
 parameters:
   sleep_mechanism.replay_ratio:
     values: [0.2, 0.4, 0.6]
-  sleep_mechanism.replay_decay_rate:
-    values: [0.9466522603081897]
   sleep_mechanism.sleep_wake_ratio:
     values: [1.0, 2.0, 5.0]
   sleep_mechanism.n_phases:
