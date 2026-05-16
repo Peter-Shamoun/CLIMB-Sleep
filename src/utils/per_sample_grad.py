@@ -19,11 +19,17 @@ first-order Taylor estimate of expected loss drop on a per-sample basis.
 
 from typing import Dict
 
+import torch
 from torch import Tensor
 from torch.func import functional_call, grad, vmap
 from torch.nn import Module
 from torch.nn.functional import cross_entropy
 
+def prepare_4d_mask(attention_mask, dtype):
+    # [batch, seq_len] -> [batch, 1, 1, seq_len]
+    mask = attention_mask[:, None, None, :].to(dtype)
+    mask = (1.0 - mask) * torch.finfo(dtype).min
+    return mask
 
 def per_sample_grads(
     model: Module,
@@ -72,6 +78,9 @@ def per_sample_grads(
         mask = (y_b != -100).float()
         return (per_token * mask).sum() / mask.sum().clamp(min=1)
 
+    dtype = next(model.parameters()).dtype
+    attention_mask_4d = prepare_4d_mask(attention_mask, dtype)
+    
     grad_fn = grad(loss_fn, argnums=(0, 1))
     # randomness='different' so dropout (or any RNG op) gets an independent mask per
     # sample inside vmap, matching what a regular batched forward would produce.
@@ -80,15 +89,33 @@ def per_sample_grads(
         in_dims=(None, None, None, None, 0, 0, 0),
         randomness="different",
     )
-    base_grads, head_grads = per_sample(
-        base_params,
-        head_params,
-        base_buffers,
-        head_buffers,
-        input_ids,
-        attention_mask,
-        labels,
-    )
+    # base_grads, head_grads = per_sample(
+    #     base_params,
+    #     head_params,
+    #     base_buffers,
+    #     head_buffers,
+    #     input_ids,
+    #     attention_mask_4d,
+    #     labels,
+    # )
+    chunk_base_grads = []
+    chunk_head_grads = []
+    batch_size = input_ids.shape[0]
+    chunk_size = 8 # TODO: make this a config parameter somehow
+
+    for start in range(0, batch_size, chunk_size):
+        bg, hg = per_sample(
+            base_params, head_params, base_buffers, head_buffers,
+            input_ids[start:start+chunk_size],
+            attention_mask_4d[start:start+chunk_size],
+            labels[start:start+chunk_size],
+        )
+        chunk_base_grads.append(bg)
+        chunk_head_grads.append(hg)
+
+    # bg and hg are dicts of {param_name: [chunk_size, *param_shape]}
+    base_grads = {k: torch.cat([c[k] for c in chunk_base_grads], dim=0) for k in base_params}
+    head_grads  = {k: torch.cat([c[k] for c in chunk_head_grads],  dim=0) for k in head_params}
 
     out: Dict[str, Tensor] = {}
     for k, v in base_grads.items():
