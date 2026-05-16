@@ -101,13 +101,13 @@ def per_sample_grads(
     chunk_base_grads = []
     chunk_head_grads = []
     batch_size = input_ids.shape[0]
-    chunk_size = 4
+    chunk_size = 4 # TODO: make this a config parameter somehow
 
     for start in range(0, batch_size, chunk_size):
         bg, hg = per_sample(
             base_params, head_params, base_buffers, head_buffers,
             input_ids[start:start+chunk_size],
-            attention_mask[start:start+chunk_size],
+            attention_mask_4d[start:start+chunk_size],
             labels[start:start+chunk_size],
         )
         chunk_base_grads.append(bg)
