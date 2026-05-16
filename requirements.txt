@@ -80,7 +80,7 @@ networkx==3.4.2
 nltk==3.9.2
 notebook==7.5.3
 notebook_shim==0.2.4
-numpy==2.2.6
+numpy==1.26
 # nvidia-cublas-cu12==12.6.4.1
 # nvidia-cuda-cupti-cu12==12.6.80
 # # nvidia-cuda-nvrtc-cu12==12.6.77

@@ -190,6 +190,8 @@ class SleepMechanismParams(DictConfig):
     replay_ratio: float = 0.1
     # How to select samples from replay buffer. Choose from random, weighted, strict, or utility.
     replay_strategy: str = "weighted"
+    # Criteria to select samples for replay. Choose from 'loss' or 'utility'.
+    replay_criteria: str = "loss"
     # Decay rate for wake candidates from previous phases
     replay_decay_rate: float = 0.7
     # Minimum decay factor, to ensure older samples are never completely removed from consideration.

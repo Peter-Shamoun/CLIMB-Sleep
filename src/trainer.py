@@ -214,10 +214,10 @@ class CustomTrainer(Trainer):
                     n_phases=self.sleep_mechanism_cfg.n_phases,
                     max_seq_length=self.sleep_mechanism_cfg.max_seq_length,
                     decay_rate=self.sleep_mechanism_cfg.replay_decay_rate,
+                    min_decay_factor=self.sleep_mechanism_cfg.min_decay_factor,
                     contextualize_sleep=self.sleep_mechanism_cfg.contextualize_sleep,
                     n_augmentations=self.sleep_mechanism_cfg.n_augmentations,
                     replay_strategy=self.sleep_mechanism_cfg.replay_strategy,
-                    decay_rate=self.sleep_mechanism_cfg.replay_decay_rate,
                     utility_temperature_gain=self.sleep_mechanism_cfg.utility_temperature_gain,
                     utility_temperature_need=self.sleep_mechanism_cfg.utility_temperature_need,
                 )
@@ -374,24 +374,13 @@ class CustomTrainer(Trainer):
 
         # Compute the loss
         if track_per_sample:
-            # Per-sample loss for replay buffer tracking. Mean over unmasked
-            # positions of each sample (matches what the optimizer minimizes).
-            per_sample_loss = cross_entropy(
-                logits, labels, reduction="none", **(loss_kwargs or {})
-            )
-            mask = (labels != -100).float()
-            per_sample_loss = (per_sample_loss * mask).sum(dim=-1) / mask.sum(
-                dim=-1
-            ).clamp(min=1)
-
             # Per-sample squared gradient norms (Gain) for Gain x Need replay
             # AND/OR online empirical Fisher accumulation for plasticity decay.
             # One torch.func.vmap pass produces grads consumed by both methods.
             need_per_sample_grads = (
-                self.sleep_mechanism_cfg.replay_strategy == "utility"
+                self.sleep_mechanism_cfg.replay_criteria == "utility"
                 or self._plasticity_decay_enabled
             )
-            gain_norms = None
             if need_per_sample_grads:
                 grads_dict = per_sample_grads(
                     unwrap_model(model),
@@ -399,25 +388,34 @@ class CustomTrainer(Trainer):
                     input_ids,
                     inputs["attention_mask"],
                     labels,
-                )
-                if self.sleep_mechanism_cfg.replay_strategy == "utility":
-                    gain_norms = (
-                        per_sample_squared_grad_norms(grads_dict)
-                        .detach()
-                        .cpu()
-                        .tolist()
-                    )
+                )   
                 if self._plasticity_decay_enabled:
                     self._accumulate_fisher(grads_dict)
+                    
+            # Per-sample replay score for replay buffer tracking.
+            per_sample_score = None
+            if self.sleep_mechanism_cfg.replay_criteria == 'loss':
+                # Score = cross entropy loss
+                per_sample_score = cross_entropy(
+                    logits, labels, reduction="none", **(loss_kwargs or {})
+                )
+                mask = (labels != -100).float()
+                per_sample_score = (per_sample_score * mask).sum(dim=-1) / mask.sum(
+                    dim=-1
+                ).clamp(min=1)
+            elif self.sleep_mechanism_cfg.replay_criteria == 'utility':
+                # Score = Utility = gain * need
+                # During wake phase, scores are stored as just gain
+                # Need scores are calculated at the end of each wake phase
+                per_sample_score = per_sample_squared_grad_norms(grads_dict)
+                
 
             # Add per-sample loss (and Gain when computed) to sampler
             if "indices" in inputs:
                 indices = inputs["indices"].tolist()
-                losses = per_sample_loss.detach().cpu().tolist()
+                scores = per_sample_score.detach().cpu().tolist()
                 self.callback_handler.train_dataloader.sampler.add_to_candidates(
-                    indices,
-                    losses,
-                    gain_norms=gain_norms,
+                    indices, scores
                 )
         loss = cross_entropy(logits, labels, **(loss_kwargs or {}))
         if inference:  # Return loss early if inference
@@ -884,28 +882,30 @@ class CustomTrainer(Trainer):
                 columns=self.sleep_table.columns, data=self.sleep_table.data
             )
             self.log({"sleep_table": _sleep_table})
+            
+            # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
+            if self._plasticity_decay_enabled:
+                self._apply_fisher_shrink()
 
         # Utility replay needs Need scores keyed by the same indices as wake_gain
         # (the canonical candidate pool for utility selection).
-        if (
-            next_phase == "SLEEP"
-            and self.sleep_mechanism_cfg.replay_strategy == "utility"
-            and sampler.wake_gain
-        ):
-            logger.info("Computing Need scores for utility replay...")
-            sampler.need_scores = compute_need_scores(
-                model=unwrap_model(self.model),
-                dataset=self.train_dataset,
-                candidate_indices=list(sampler.wake_gain.keys()),
-                n_layers=self.sleep_mechanism_cfg.need_embedding_layers,
-                k=self.sleep_mechanism_cfg.need_knn_k,
-                device=self.args.device,
-                batch_size=self.args.per_device_train_batch_size,
-            )
-
-        # Finalize Fisher diagonal from the wake phase that just ended.
-        if next_phase == "SLEEP" and self._plasticity_decay_enabled:
-            self._finalize_fisher()
+        elif next_phase == "SLEEP":
+            if self.sleep_mechanism_cfg.replay_criteria == "utility":
+                logger.info("Computing Need scores for utility replay...")
+                # Need has to be calculated at the end of wake phase because embeddings shift during training
+                need_scores = compute_need_scores(
+                    model=unwrap_model(self.model),
+                    dataset=self.train_dataset,
+                    candidate_indices=list(sampler.wake_gain.keys()),
+                    n_layers=self.sleep_mechanism_cfg.need_embedding_layers,
+                    k=self.sleep_mechanism_cfg.need_knn_k,
+                    device=self.args.device,
+                    batch_size=self.args.per_device_train_batch_size,
+                )
+                sampler.update_utility_scores(need_scores)
+            # Finalize Fisher diagonal from the wake phase that just ended.
+            if self._plasticity_decay_enabled:
+                self._finalize_fisher()
 
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
@@ -916,10 +916,6 @@ class CustomTrainer(Trainer):
             diag = getattr(sampler, "last_utility_diagnostics", None)
             if diag is not None:
                 self.log({f"utility/{k}": v for k, v in diag.items()})
-
-        # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
-        if next_phase == "WAKE" and self._plasticity_decay_enabled:
-            self._apply_fisher_shrink()
 
         logger.info(
             f"Swapped to {sampler.phase} phase for fold {sampler.curr_fold} of {sampler.n_phases}"
