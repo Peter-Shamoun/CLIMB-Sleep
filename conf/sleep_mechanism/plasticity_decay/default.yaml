@@ -1,0 +1,4 @@
+enabled: True
+decay_type: "fisher_protected_shrink"
+shrink_factor: 0.95
+protect_top_fraction: 0.2

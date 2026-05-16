@@ -1,7 +1,7 @@
 defaults:
   - base_config
   - _self_
-  - dataset: strict_small
+  - dataset: strict
   - objective_curriculum: base_mlm
   - model: roberta_pln_small
   - tokenizer: cbt_8192
@@ -19,7 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "default-run"
+  name: "refactor-run"
   output_dir: "/mnt/data"
 
 data_preprocessing:
@@ -30,12 +30,14 @@ data_preprocessing:
 trainer:
   batch_size: 32 # across 4 GPUs gives an effective batch size of 128
   lr: 1e-3 # 1e-4 is used in fairseq; 1e-3 is default in huggingface
-  num_warmup_steps: 100_000
-  max_training_steps: 400_000
+  num_warmup_steps: 1_000
+  max_training_steps: 80_000
   eval_blimp: False
-  eval_fast: False
+  eval_fast: True
   eval_glue: False
   eval_msgs: False
   eval_perplexity: True
   n_eval_samples: 100
   eval_batch_size: 4
+  mask_probability: 0.15
+  unmask_probability: 0
