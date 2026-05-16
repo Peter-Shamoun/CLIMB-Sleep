@@ -19,11 +19,17 @@ first-order Taylor estimate of expected loss drop on a per-sample basis.
 
 from typing import Dict
 
+import torch
 from torch import Tensor
 from torch.func import functional_call, grad, vmap
 from torch.nn import Module
 from torch.nn.functional import cross_entropy
 
+def prepare_4d_mask(attention_mask, dtype):
+    # [batch, seq_len] -> [batch, 1, 1, seq_len]
+    mask = attention_mask[:, None, None, :].to(dtype)
+    mask = (1.0 - mask) * torch.finfo(dtype).min
+    return mask
 
 def per_sample_grads(
     model: Module,
@@ -72,6 +78,9 @@ def per_sample_grads(
         mask = (y_b != -100).float()
         return (per_token * mask).sum() / mask.sum().clamp(min=1)
 
+    dtype = next(model.parameters()).dtype
+    attention_mask_4d = prepare_4d_mask(attention_mask, dtype)
+    
     grad_fn = grad(loss_fn, argnums=(0, 1))
     # randomness='different' so dropout (or any RNG op) gets an independent mask per
     # sample inside vmap, matching what a regular batched forward would produce.
@@ -86,7 +95,7 @@ def per_sample_grads(
         base_buffers,
         head_buffers,
         input_ids,
-        attention_mask,
+        attention_mask_4d,
         labels,
     )
 
