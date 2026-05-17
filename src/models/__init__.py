@@ -24,6 +24,8 @@ def load_base_model(cfg: BabyLMConfig) -> PreTrainedModel:
 
     if cfg.model.name in MODEL_REGISTRY:
         config = CONFIG_REGISTRY[cfg.model.name](**model_kwargs)
+        # vmap (per-sample grads) doesn't work with SDPA attention — force eager.
+        config._attn_implementation = "eager"
 
         if config.name_or_path:
             model = MODEL_REGISTRY[cfg.model.name].from_pretrained(

@@ -3,6 +3,7 @@
 import logging
 import os
 import argparse
+import math
 
 # config-related imports
 import hydra
@@ -72,9 +73,6 @@ def main(cfg: BabyLMConfig):
     if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
         logger.info("Model and Tokenizer Mismatch - resizing model token embeddings")
         model.resize_token_embeddings(len(tokenizer))
-    # assert (
-    #     tokenizer.vocab_size == model.config.vocab_size
-    # ), f"Tokenizer and model vocab size mismatch: {tokenizer.vocab_size}{model.config.vocab_size}"
 
     # Preprocess data
     logger.info("Preprocessing data")
@@ -98,7 +96,7 @@ def main(cfg: BabyLMConfig):
     if cfg.experiment.offline_run:
         os.environ["WANDB_DISABLED"] = "true"
         os.environ["WANDB_MODE"] = "disabled"
-        curriculum_learning_table = None
+        sleep_table = None
     else:
         # These environment variables get picked up by Trainer
         os.environ["WANDB_PROJECT"] = cfg.experiment.group
@@ -125,27 +123,63 @@ def main(cfg: BabyLMConfig):
                 id=cfg.experiment.resume_run_id,
                 resume="allow",
             )
-        else:
-            curriculum_learning_table = None
+            if cfg.sleep_mechanism:
+                sleep_table = wandb.Table(
+                    columns=[
+                        "global_step",
+                        "phase_step",
+                        "phase_num",
+                        "replay_samples",
+                        # "losses",
+                    ]
+                )
+            else:
+                sleep_table = None
 
     # Set up training arguments
-    # TODO: If we are using wandb sweeps, note that we will need to think about how we store/
-    # initialize the name of the current experiment so that it doesn't interfere with the name
-    # of other experiments, and also so that we can store checkpoints of that run on HF hub;
-    # alternatively maybe we use ray tune which is natively supported by Trainer
+    # set up max steps
+    max_training_steps = cfg.trainer.max_training_steps
+    max_steps_per_phase = {}
     if cfg.sleep_mechanism:
-        theoretical_max_steps = int((cfg.sleep_mechanism.wake_block_steps 
-                                + cfg.sleep_mechanism.sleep_max_steps) 
-                                * cfg.sleep_mechanism.n_phases)
-        empirical_max_steps = int((len(train_dataset) 
-                                   // cfg.trainer.batch_size)
-                                  + (cfg.sleep_mechanism.sleep_max_steps 
-                                     * cfg.sleep_mechanism.n_phases))
-        logger.info("Theretical max steps: %d", theoretical_max_steps)
-        logger.info("Empirical max steps: %d", empirical_max_steps)
-        max_training_steps = min(theoretical_max_steps, empirical_max_steps)
-    else:
-        max_training_steps = cfg.trainer.max_training_steps
+        total_wake_steps = min(
+            cfg.sleep_mechanism.wake_block_steps * cfg.sleep_mechanism.n_phases,
+            math.ceil(len(train_dataset) / cfg.trainer.batch_size)
+        )
+        wake_steps_per_phase = math.ceil(total_wake_steps / cfg.sleep_mechanism.n_phases)
+        
+        # Set according to ratio
+        if cfg.sleep_mechanism.sleep_wake_ratio > 0:
+            sleep_max_steps_per_phase = (
+                wake_steps_per_phase
+                * cfg.sleep_mechanism.sleep_wake_ratio
+            )
+            total_sleep_steps = sleep_max_steps_per_phase * cfg.sleep_mechanism.n_phases
+            max_training_steps = total_wake_steps + total_sleep_steps
+            
+        # Set according to max steps
+        else:
+            total_sleep_steps = max_training_steps - total_wake_steps
+            sleep_max_steps_per_phase = (
+                math.ceil(total_sleep_steps / cfg.sleep_mechanism.n_phases)
+            )
+        # convert all to integers    
+        sleep_max_steps_per_phase = int(sleep_max_steps_per_phase)
+        wake_steps_per_phase = int(wake_steps_per_phase)
+        max_training_steps = int(max_training_steps)
+        
+        if sleep_max_steps_per_phase < 1:
+            min_steps = (total_wake_steps
+                        + cfg.sleep_mechanism.n_phases)
+            logger.info("Too few steps for training! Min steps: %d" % min_steps)
+            raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
+        logger.info("Wake steps/phase: %d" % wake_steps_per_phase)
+        logger.info("Sleep steps/phase: %d" % sleep_max_steps_per_phase)
+        logger.info("Sleep/Wake ratio: %f" % (sleep_max_steps_per_phase / wake_steps_per_phase))
+        logger.info("Total max steps: %d" % max_training_steps)
+        max_steps_per_phase = {
+            "SLEEP": sleep_max_steps_per_phase,
+            "WAKE": wake_steps_per_phase
+        }
         
     logging_steps = (max_training_steps 
                      // (100 if cfg.experiment.dry_run else 1000))
@@ -196,16 +230,10 @@ def main(cfg: BabyLMConfig):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
-        curriculum_learning_table=None,
+        sleep_table=sleep_table,
+        max_steps_per_phase = max_steps_per_phase
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
-    # dl = trainer.get_train_dataloader()
-    # dl.sampler.switch_phase("SLEEP")
-    # batch = next(iter(dl))
-    # print(batch.keys())
-    # print("Masked input_ids:\n", batch["input_ids"])
-    # print("Labels:\n", batch["labels"])
-    # exit()
     if not cfg.experiment.resume_checkpoint_path:
         trainer.evaluate()  # Initial model evaluation
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
@@ -225,11 +253,4 @@ def main(cfg: BabyLMConfig):
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='Generate text using language models via LM Studio API')
-    # parser.add_argument('--config_path', type=str, required=True,
-    #                     help='Path to the Hydra config file')
-    # args = parser.parse_args()
-    # # Load the config file using Hydra
-    # cfg = hydra.compose(config_name=args.config_path)
-    # main(cfg)
     main()
