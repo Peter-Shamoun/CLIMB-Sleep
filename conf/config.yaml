@@ -6,7 +6,7 @@ defaults:
   - model: roberta_pln_small
   - tokenizer: cbt_8192
   # Uncomment the following line to enable sleep mechanism:
-  - sleep_mechanism: default
+  - sleep_mechanism: baseline-like
 
 dataset:
   name: "cambridge-climb/BabyLM"
@@ -19,7 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "refactor-run"
+  name: "sleep-baseline-like-run"
   output_dir: "/mnt/data"
 
 data_preprocessing:
