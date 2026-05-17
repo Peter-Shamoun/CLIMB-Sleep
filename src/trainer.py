@@ -866,7 +866,7 @@ class CustomTrainer(Trainer):
             sample_ids = [samp["input_ids"] for samp in samples]
             sample_texts = "\n\n".join(
                 [
-                    f"{i}: {self.tokenizer.decode(ids)}"
+                    f"{i}:\n - score: {round(losses[i][0], 2)}\n - factor: {round(losses[i][1], 2)}\n - text: {self.tokenizer.decode(ids)}"
                     for i, ids in enumerate(sample_ids)
                 ]
             )
