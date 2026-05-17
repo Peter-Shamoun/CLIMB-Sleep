@@ -1,13 +1,12 @@
-# Default sleep mechanism configuration
-# To use: add "- sleep_mechanism: default" to defaults in config.yaml
-# Or override individual values via command line
+# Sleep mechanism configuration that mimics epoch-training
+# Models epoch training as one long sleep mechanism
+# swr + 1 = n_epochs
+# To use: add "- sleep_mechanism: baseline-like" to defaults in config.yaml
 
-wake_block_steps: 9999999 # 1000
-sleep_wake_ratio: 5.0 # num eq. epochs - 1
+wake_block_steps: 9999999 # must be higher than dataset size / batch size
+sleep_wake_ratio: 5.0 # = num epochs - 1
 replay_ratio: 1.0
 replay_strategy: "weighted"
-# plasticity_decay_type: lr_decay
-# plasticity_decay_rate: 0.9
 n_augmentations: 1000
 n_phases: 1
 max_seq_length: 128
