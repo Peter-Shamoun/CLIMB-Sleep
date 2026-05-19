@@ -887,7 +887,7 @@ class CustomTrainer(Trainer):
             if self._plasticity_decay_enabled:
                 self._apply_fisher_shrink()
 
-        # Utility replay needs Need scores keyed by the same indices as wake_gain
+        # Utility replay needs Need scores keyed by the same indices as gain
         # (the canonical candidate pool for utility selection).
         elif next_phase == "SLEEP":
             if self.sleep_mechanism_cfg.replay_criteria == "utility":
@@ -896,7 +896,7 @@ class CustomTrainer(Trainer):
                 need_scores = compute_need_scores(
                     model=unwrap_model(self.model),
                     dataset=self.train_dataset,
-                    candidate_indices=list(sampler.wake_gain.keys()),
+                    candidate_indices=sampler.curr_wake_candidates,
                     n_layers=self.sleep_mechanism_cfg.need_embedding_layers,
                     k=self.sleep_mechanism_cfg.need_knn_k,
                     device=self.args.device,

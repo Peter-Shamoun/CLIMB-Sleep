@@ -63,7 +63,7 @@ class SleepSampler(Sampler):
         self.wake_candidates: dict[int, tuple(float, float)] = {}
         # Stores {index: squared gradient norm} during wake for Gain x Need replay.
         # Populated by add_to_candidates when the trainer computes per-sample grads.
-        # self.wake_gain: dict[int, float] = {}
+        self.curr_wake_candidates: List[int] = []
         # Need scores: set by the trainer at end of wake before switch_phase("SLEEP").
         # self.need_scores: dict[int, float] = {}
         # Last utility-distribution diagnostics, set by update_replay_buffer when
@@ -143,7 +143,8 @@ class SleepSampler(Sampler):
             assert len(gain_norms) == len(
                 indices
             ), "gain_norms must have same length as indices"
-
+        # store indices of candidates from this phase
+        self.curr_wake_candidates.extend(indices)
         for idx, score in zip(indices, scores):
             # Store or update with max loss seen for this index
             score = float(score)
@@ -185,6 +186,7 @@ class SleepSampler(Sampler):
             # Transitioning SLEEP -> WAKE
             # Clear replay buffer and reset for new wake cycle
             self.replay_buffer = []
+            self.curr_wake_candidates = []
             self.decay_wake_candidates()
             # Gain values are model-state-dependent; stale norms from earlier cycles
             # would bias selection. Clear fully rather than decay.
