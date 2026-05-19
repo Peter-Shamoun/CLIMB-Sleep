@@ -5,10 +5,10 @@ defaults:
 - plasticity_decay: default
 
 wake_block_steps: 9999999 # 1000
-sleep_wake_ratio: 1.0 # num eq. epochs - 1
+sleep_wake_ratio: 5.0 # num eq. epochs - 1
 replay_ratio: 0.3
 replay_strategy: "weighted"
-replay_decay_rate: 0.3
+replay_decay_rate: 0.05334773969181028
 n_augmentations: 40
 n_phases: 50
 max_seq_length: 128
