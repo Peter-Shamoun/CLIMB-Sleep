@@ -312,8 +312,9 @@ class SleepSampler(Sampler):
         if len(self.replay_buffer) < 1:
             return None
         if num_samples < 0:
-            return self.replay_buffer.copy()
-        return_idxs = list(np.random.choice(self.replay_buffer, num_samples))
+            return_idxs = self.replay_buffer
+        else:
+            return_idxs = list(np.random.choice(self.replay_buffer, num_samples))
         result = [
             (self.dataset[int(idx)], self.wake_candidates[idx])
             for idx in return_idxs

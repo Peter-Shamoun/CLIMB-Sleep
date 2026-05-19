@@ -862,7 +862,7 @@ class CustomTrainer(Trainer):
             # On switching to wake phase, build and log the sleep table
             logger.info("Logging replay samples...")
 
-            samples, losses = list(zip(*sampler.get_replay_samples(10)))
+            samples, losses = list(zip(*sampler.get_replay_samples(-1)))
             sample_ids = [samp["input_ids"] for samp in samples]
             sample_texts = "\n\n".join(
                 [
