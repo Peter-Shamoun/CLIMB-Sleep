@@ -6,6 +6,7 @@ wake_block_steps: 9999999 # 1000
 sleep_wake_ratio: 5.0 # num eq. epochs - 1
 replay_ratio: 0.3
 replay_strategy: "weighted"
+replay_decay_rate: 0.7
 # plasticity_decay_type: lr_decay
 # plasticity_decay_rate: 0.9
 n_augmentations: 40

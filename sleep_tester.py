@@ -149,6 +149,13 @@ def main(cfg: BabyLMConfig) -> None:
     print("Replay Buffer avg. loss:", np.mean([sleep_sampler.wake_candidates[i] for i in sleep_sampler.replay_buffer]))
     print()
     
+    print("===Looking into Replay Buffer===")
+    print()
+    samples = sleep_sampler.get_replay_samples(5)
+    for sample in samples:
+        print(sample)
+    print()
+    
     print("===Phase Transition===")
     print("Current phase:", sleep_sampler.phase)
     sleep_sampler.switch_phase("SLEEP")

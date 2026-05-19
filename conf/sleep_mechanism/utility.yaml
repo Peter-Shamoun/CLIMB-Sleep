@@ -1,0 +1,18 @@
+# Gain x Need utility-based replay selection.
+# Per-sample squared gradient norm (Gain) combined with k-NN embedding density (Need).
+# Plasticity decay disabled here; see utility_with_decay.yaml for the combined run.
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 5.0 # num eq. epochs - 1
+replay_ratio: 0.3
+replay_strategy: "utility"
+replay_decay_rate: 0.7
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+utility_temperature_gain: 1.0
+utility_temperature_need: 1.0
+need_knn_k: 50
+need_embedding_layers: 4
