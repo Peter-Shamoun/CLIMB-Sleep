@@ -327,8 +327,8 @@ class SleepSampler(Sampler):
             need_scores (dict[int, float]): mapping of sample idx to need score.
         """
         gains, _ = zip(*self.wake_candidates.values())
-        gain_softmax_denom = np.exp(np.array(gains)).sum()
-        needs_softmax_denom = np.exp(np.array(need_scores.values())).sum()
+        gain_softmax_denom = np.exp(np.array(list(gains))).sum()
+        needs_softmax_denom = np.exp(np.array(list(need_scores.values()))).sum()
         # calculate softmaxes to put both on the same scale
         for idx, need in need_scores.items():
             gain, decay_factor = self.wake_candidates[idx]
