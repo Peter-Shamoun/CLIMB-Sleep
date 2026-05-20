@@ -41,6 +41,7 @@ from transformers.trainer_utils import (
 )
 from transformers.training_args import ParallelMode, TrainingArguments
 from transformers.utils import is_torch_neuroncore_available
+import wandb
 from wandb import Table
 
 from src.data_curriculum.utility_scoring import compute_need_scores
@@ -250,7 +251,9 @@ class CustomTrainer(Trainer):
         logger.info(
             f"GLOBAL STEP: {self.state.global_step};{self.global_step}"
         )
-
+        logger.info(
+            f"WANDB RUN IS NONE: {wandb.run is None}"
+        )
         output = {**logs, **{"step": self.state.global_step}}
         if "sleep_table" not in logs:
             # NOTE: Everything in state will be serialized to a json file when we save
