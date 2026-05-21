@@ -1,15 +1,13 @@
 # Default sleep mechanism configuration
 # To use: add "- sleep_mechanism: default" to defaults in config.yaml
 # Or override individual values via command line
-defaults:
-- plasticity_decay: default
-
 wake_block_steps: 9999999 # 1000
-sleep_wake_ratio: 1.0 # num eq. epochs - 1
-replay_ratio: 0.3
+sleep_wake_ratio: 2.0 # num eq. epochs - 1
+replay_ratio: 0.2
 replay_strategy: "weighted"
-replay_decay_rate: 0.3
+replay_criteria: "loss"
+replay_decay_rate: 0.05334773969181028
 n_augmentations: 40
-n_phases: 50
+n_phases: 100
 max_seq_length: 128
 contextualize_sleep: True

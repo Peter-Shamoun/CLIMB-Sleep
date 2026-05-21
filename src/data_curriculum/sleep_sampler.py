@@ -63,7 +63,7 @@ class SleepSampler(Sampler):
         self.wake_candidates: dict[int, tuple(float, float)] = {}
         # Stores {index: squared gradient norm} during wake for Gain x Need replay.
         # Populated by add_to_candidates when the trainer computes per-sample grads.
-        # self.wake_gain: dict[int, float] = {}
+        self.curr_wake_candidates: List[int] = []
         # Need scores: set by the trainer at end of wake before switch_phase("SLEEP").
         # self.need_scores: dict[int, float] = {}
         # Last utility-distribution diagnostics, set by update_replay_buffer when
@@ -87,7 +87,13 @@ class SleepSampler(Sampler):
             for i in range(0, len(self.dataset_indices), self.fold_size)
         ]
 
-        self.wake_pointer = 0
+        # Position cursors into folds[curr_fold] (WAKE) and contextualized_chunks
+        # /replay_buffer (SLEEP). Read+advanced one-per-yield in __iter__ so the
+        # generator re-checks self.phase on every tick; the previous for-loop
+        # design captured the iterable at entry and kept yielding from it after
+        # phase swaps, contaminating wake batches with replay-buffer indices.
+        self.wake_pos = 0
+        self.sleep_pos = 0
 
         # Save max feasible steps for wake phase in case user-defined max exceeds
         # data in folds
@@ -96,30 +102,32 @@ class SleepSampler(Sampler):
         # print(f"MAX STEPS: {len(self.dataset) // self.batch_size}")
 
     def __iter__(self):
-        # If wake phase:
-        #   Shuffle data in fold randomly
-        #   append to batch until batch size is met
+        # One index per tick so self.phase is re-checked between yields. A
+        # for-loop over self.folds[curr_fold] or self.contextualized_chunks
+        # would capture the iterable at entry and keep yielding from it even
+        # after the trainer flipped phase mid-loop, mixing replay-buffer
+        # indices into wake batches (and vice versa).
         while True:
             if self.phase == "WAKE":
-                for i in self.folds[self.curr_fold]:
-                    assert i < len(
-                        self.dataset
-                    ), f"Index {i} out of range of dataset"
-                    yield i
-            # If sleep phase:
+                fold = self.folds[self.curr_fold]
+                i = fold[self.wake_pos % len(fold)]
+                self.wake_pos += 1
+                assert i < len(
+                    self.dataset
+                ), f"Index {i} out of range of dataset"
+                yield i
             elif self.phase == "SLEEP":
-                # use contextualized chunks if available, otherwise use replay buffer
                 indices_to_sample = (
                     self.contextualized_chunks
                     if self.contextualize_sleep and self.contextualized_chunks
                     else self.replay_buffer
                 )
-
-                for i in indices_to_sample:
-                    assert i < len(
-                        self.dataset
-                    ), f"Index {i} out of range of dataset"
-                    yield i
+                i = indices_to_sample[self.sleep_pos % len(indices_to_sample)]
+                self.sleep_pos += 1
+                assert i < len(
+                    self.dataset
+                ), f"Index {i} out of range of dataset"
+                yield i
 
     def add_to_candidates(
         self,
@@ -143,7 +151,8 @@ class SleepSampler(Sampler):
             assert len(gain_norms) == len(
                 indices
             ), "gain_norms must have same length as indices"
-
+        # store indices of candidates from this phase
+        self.curr_wake_candidates.extend(indices)
         for idx, score in zip(indices, scores):
             # Store or update with max loss seen for this index
             score = float(score)
@@ -180,11 +189,13 @@ class SleepSampler(Sampler):
             else:
                 self.replay_buffer = []
                 raise ValueError("Replay Buffer is Empty")
+            self.sleep_pos = 0
 
         elif new_phase == "WAKE":
             # Transitioning SLEEP -> WAKE
             # Clear replay buffer and reset for new wake cycle
             self.replay_buffer = []
+            self.curr_wake_candidates = []
             self.decay_wake_candidates()
             # Gain values are model-state-dependent; stale norms from earlier cycles
             # would bias selection. Clear fully rather than decay.
@@ -194,6 +205,7 @@ class SleepSampler(Sampler):
             # Increment fold tracker and re-init max steps
             self.curr_fold = (self.curr_fold + 1) % self.n_phases
             self.wake_max_steps = self.get_wake_max_steps()
+            self.wake_pos = 0
 
         self.phase = new_phase
 
@@ -319,19 +331,33 @@ class SleepSampler(Sampler):
         return result
     
     def update_utility_scores(self, need_scores: dict[int, float]):
-        """Updates stored gain scores to become utility scores with calculated need scores.
+        """Rewrite current-fold scores as Utility = softmax(Gain/T_g) * softmax(Need/T_n).
+
+        Older folds in wake_candidates keep their previously-computed utility,
+        aged by decay_factor. The softmax pool is restricted to need_scores'
+        indices (the current fold) so both factors are normalized over the
+        same set; mixing stale utility-probs from older folds with fresh
+        grad-norms would softmax across incompatible scales.
+
+        Uses torch.softmax for numerical stability; plain np.exp overflows
+        for squared gradient norms above ~700 and produces NaN downstream.
 
         Args:
-            need_scores (dict[int, float]): mapping of sample idx to need score.
+            need_scores: mapping of sample idx to need score (current fold only).
         """
-        gains, _ = zip(*self.wake_candidates.values())
-        gain_softmax_denom = np.exp(np.array(gains)).sum()
-        needs_softmax_denom = np.exp(np.array(need_scores.values())).sum()
-        # calculate softmaxes to put both on the same scale
-        for idx, need in need_scores.items():
-            gain, decay_factor = self.wake_candidates[idx]
-            sm_gain = np.exp(gain) / gain_softmax_denom
-            sm_need = np.exp(need) / needs_softmax_denom
-            utility_score = sm_gain * sm_need
-            self.wake_candidates[idx] = (utility_score, decay_factor)
+        indices = list(need_scores.keys())
+        gains_t = torch.tensor(
+            [self.wake_candidates[idx][0] for idx in indices],
+            dtype=torch.float32,
+        )
+        needs_t = torch.tensor(
+            [need_scores[idx] for idx in indices],
+            dtype=torch.float32,
+        )
+        gain_probs = torch.softmax(gains_t / self.utility_temperature_gain, dim=0)
+        need_probs = torch.softmax(needs_t / self.utility_temperature_need, dim=0)
+        utilities = (gain_probs * need_probs).tolist()
+        for idx, utility in zip(indices, utilities):
+            _, decay_factor = self.wake_candidates[idx]
+            self.wake_candidates[idx] = (float(utility), decay_factor)
                 
