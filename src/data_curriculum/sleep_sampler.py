@@ -136,12 +136,15 @@ class SleepSampler(Sampler):
         gain_norms: Optional[List[float]] = None,
     ):
         """
-        Add indices, replay scores, and optional Gain scores to the candidate buffer during WAKE.
+        Add indices and replay scores to the candidate buffer during WAKE.
         Args:
             indices: List of sample indices.
-            scores: List of per-sample loss values.
-            gain_norms: Optional list of per-sample squared gradient norms (Gain).
-                Required when replay_strategy == "utility"; ignored otherwise.
+            scores: Per-sample replay scores. Meaning is polymorphic and set
+                by the trainer's replay_criteria: cross-entropy loss for
+                "loss", squared gradient norm (Gain) for "utility". The
+                value lands in wake_candidates[idx][0] and may be overwritten
+                by update_utility_scores at end of wake.
+            gain_norms: Deprecated/unused; kept for back-compat.
         """
         # Can only add during WAKE phase
         assert (
@@ -274,25 +277,6 @@ class SleepSampler(Sampler):
                     candidate_indices, size=num_replay, replace=False
                 )
             )
-        # elif self.replay_strategy == "utility":
-        #     assert (
-        #         self.wake_gain
-        #     ), "Gain dict empty; trainer should populate via add_to_candidates"
-        #     assert (
-        #         self.need_scores
-        #     ), "Need dict empty; trainer should set before switch_phase('SLEEP')"
-        #     # Utility pool is wake_gain (current-fold samples with fresh Gain),
-        #     # not wake_candidates (which carries decayed losses across cycles).
-        #     num_replay = int(len(self.wake_gain) * self.replay_ratio)
-        #     sampled, diagnostics = sample_utility_indices(
-        #         gain_scores=self.wake_gain,
-        #         need_scores=self.need_scores,
-        #         num_replay=num_replay,
-        #         temperature_gain=self.utility_temperature_gain,
-        #         temperature_need=self.utility_temperature_need,
-        #     )
-        #     self.replay_buffer = sampled
-        #     self.last_utility_diagnostics = diagnostics
         if self.contextualize_sleep:
             self.contextualized_chunks = self.contextualize_buffer()
 
@@ -331,16 +315,25 @@ class SleepSampler(Sampler):
         return result
     
     def update_utility_scores(self, need_scores: dict[int, float]):
-        """Rewrite current-fold scores as Utility = softmax(Gain/T_g) * softmax(Need/T_n).
+        """Rewrite current-fold scores as Utility = gain_norm * need_norm.
 
-        Older folds in wake_candidates keep their previously-computed utility,
-        aged by decay_factor. The softmax pool is restricted to need_scores'
-        indices (the current fold) so both factors are normalized over the
-        same set; mixing stale utility-probs from older folds with fresh
-        grad-norms would softmax across incompatible scales.
+        Gain and need are each Winsorized to the [1st, 99th] percentile of
+        the current candidate pool and min-max normalized to [0, 1] before
+        multiplication. Percentiles are taken over need_scores' indices
+        (the current fold) so both factors share a comparable scale;
+        squared gradient norms in particular span many orders of magnitude
+        and would otherwise let a single outlier dominate selection.
 
-        Uses torch.softmax for numerical stability; plain np.exp overflows
-        for squared gradient norms above ~700 and produces NaN downstream.
+        Older folds in wake_candidates keep their previously-computed
+        utility, aged by decay_factor.
+
+        Edge cases:
+          - p99 == p1 for either dim: that dim is collapsed to uniform
+            (all-1.0) so the sibling dim alone drives selection.
+          - All-zero or non-finite product: fall back to a small uniform
+            epsilon so torch.multinomial downstream stays well-defined.
+          - Negative cosine similarity in need: clipped+normalized into
+            [0, 1], satisfying the multinomial non-negative constraint.
 
         Args:
             need_scores: mapping of sample idx to need score (current fold only).
@@ -354,10 +347,28 @@ class SleepSampler(Sampler):
             [need_scores[idx] for idx in indices],
             dtype=torch.float32,
         )
-        gain_probs = torch.softmax(gains_t / self.utility_temperature_gain, dim=0)
-        need_probs = torch.softmax(needs_t / self.utility_temperature_need, dim=0)
-        utilities = (gain_probs * need_probs).tolist()
-        for idx, utility in zip(indices, utilities):
+        gain_norm = self._winsorized_minmax(gains_t)
+        need_norm = self._winsorized_minmax(needs_t)
+        utilities = gain_norm * need_norm
+        if not torch.isfinite(utilities).all() or utilities.sum() <= 0:
+            utilities = torch.full_like(utilities, 1e-8)
+        for idx, utility in zip(indices, utilities.tolist()):
             _, decay_factor = self.wake_candidates[idx]
             self.wake_candidates[idx] = (float(utility), decay_factor)
+
+    @staticmethod
+    def _winsorized_minmax(x: torch.Tensor) -> torch.Tensor:
+        """Clip x to its [1st, 99th] percentile, then min-max to [0, 1].
+
+        Returns ones (uniform) when p99 == p1 so a constant dim does not
+        zero the multiplicative product with its sibling.
+        """
+        if x.numel() == 0:
+            return x
+        p1 = torch.quantile(x, 0.01)
+        p99 = torch.quantile(x, 0.99)
+        if (p99 - p1).abs() < 1e-12:
+            return torch.ones_like(x)
+        x_clipped = torch.clamp(x, min=p1, max=p99)
+        return (x_clipped - p1) / (p99 - p1)
                 
