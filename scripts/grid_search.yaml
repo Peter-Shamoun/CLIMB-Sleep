@@ -8,11 +8,13 @@ metric:
 
 parameters:
   sleep_mechanism.replay_ratio:
-    values: [0.2, 0.4, 0.6]
+    values: [0.01, 0.1, 0.2]
   sleep_mechanism.sleep_wake_ratio:
-    values: [1.0, 2.0, 5.0]
+    values: [5.0, 50.0, 100.0]
   sleep_mechanism.n_phases:
     values: [50, 100, 500]
+  experiment.seed:
+    values: [1, 2, 3]
   # sleep_mechanism.contextualize_sleep:
   #   values: [True, False]
 
