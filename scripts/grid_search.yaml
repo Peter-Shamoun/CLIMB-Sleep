@@ -7,14 +7,14 @@ metric:
   name: eval/best_perplexity_mean
 
 parameters:
-  sleep_mechanism.replay_ratio:
-    values: [0.01, 0.1, 0.2]
-  sleep_mechanism.sleep_wake_ratio:
-    values: [5.0, 50.0, 100.0]
-  sleep_mechanism.n_phases:
-    values: [50, 100, 500]
   experiment.seed:
     values: [1, 2, 3]
+  sleep_mechanism.replay_ratio:
+    values: [0.05, 0.1, 0.2, 0.4, 0.8] # add higher replay ratios
+  sleep_mechanism.n_phases:
+    values: [50, 100, 200]
+  sleep_mechanism.sleep_wake_ratio:
+    values: [10.0, 20.0, 40.0, 80.0] # make the patterns a little more regular, either linear or exponential
   # sleep_mechanism.contextualize_sleep:
   #   values: [True, False]
 

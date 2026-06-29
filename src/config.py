@@ -188,7 +188,7 @@ class SleepMechanismParams(DictConfig):
     sleep_wake_ratio: float = -1.0
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
-    # How to select samples from replay buffer. Choose from random, weighted, strict, or utility.
+    # How to select samples from replay buffer. Choose from random, weighted, strict.
     replay_strategy: str = "weighted"
     # Criteria to select samples for replay. Choose from 'loss' or 'utility'.
     replay_criteria: str = "loss"
