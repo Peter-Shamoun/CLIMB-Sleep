@@ -1,0 +1,28 @@
+# Weighted loss replay + neuron-freezing plasticity decay (random selection).
+# Runnable preset: `python train.py sleep_mechanism=freeze_replay`.
+# Each sleep cycle freezes a fraction of MLP neurons (up to the ceiling); their
+# gradients are zeroed on every subsequent step. Switch to causal IG selection
+# with `sleep_mechanism.plasticity_decay.mode=causal` (requires captum).
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 5.0 # num eq. epochs - 1
+replay_ratio: 0.3
+replay_strategy: "weighted"
+replay_criteria: "loss"
+replay_decay_rate: 0.7
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+plasticity_decay:
+  enabled: true
+  decay_type: "freeze"
+  mode: "random"
+  freeze_target: "mlp"
+  freeze_type: "complete"
+  decay: 0.1
+  plasticity_ceiling: 0.5
+  plasticity_decay_factor: 0.1
+  freezing_ratio: 0.25
+  seed: 0

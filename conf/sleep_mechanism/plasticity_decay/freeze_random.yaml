@@ -1,0 +1,13 @@
+# Neuron-freezing plasticity decay, RANDOM neuron selection (control).
+# Each sleep cycle freezes a fraction of MLP neurons up to the ceiling;
+# their gradients are zeroed thereafter.
+enabled: True
+decay_type: "freeze"
+mode: "random"
+freeze_target: "mlp"
+freeze_type: "complete"
+decay: 0.1
+plasticity_ceiling: 0.5
+plasticity_decay_factor: 0.1
+freezing_ratio: 0.25
+seed: 0

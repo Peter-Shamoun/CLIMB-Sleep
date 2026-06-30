@@ -47,6 +47,7 @@ from src.data_curriculum.utility_scoring import compute_need_scores
 
 # Model Loading
 from src.models import load_base_model
+from src.neuron_freezing import NeuronFreezer
 from src.synaptic_homeostasis import apply_fisher_protected_shrink
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
@@ -122,11 +123,24 @@ class CustomTrainer(Trainer):
         # Synaptic-Intelligence-style: Fisher is accumulated during wake at the
         # moving theta of training, not at a fixed end-of-wake snapshot. This is
         # a deliberate deviation from strict EWC; SI (Zenke 2017) is the citation.
-        self._plasticity_decay_enabled = bool(
-            self.sleep_mechanism_cfg
-            and self.sleep_mechanism_cfg.plasticity_decay is not None
-            and self.sleep_mechanism_cfg.plasticity_decay.enabled
+        _pd = (
+            self.sleep_mechanism_cfg.plasticity_decay
+            if self.sleep_mechanism_cfg
+            else None
         )
+        _pd_on = bool(_pd is not None and _pd.enabled)
+        # decay_type selects the mechanism: Fisher shrink vs. neuron freezing.
+        self._plasticity_decay_enabled = _pd_on and _pd.decay_type == "fisher_protected_shrink"
+        self._freeze_enabled = _pd_on and _pd.decay_type == "freeze"
+        if _pd_on and not (self._plasticity_decay_enabled or self._freeze_enabled):
+            raise ValueError(
+                f"plasticity_decay.enabled=True but unknown decay_type "
+                f"{_pd.decay_type!r}; expected 'fisher_protected_shrink' or 'freeze'."
+            )
+        # Most recent WAKE batch, cached for causal freezing attribution.
+        self._last_wake_batch: Optional[Dict[str, torch.Tensor]] = None
+        # Lazily constructed below once the base model + MLM head exist.
+        self._neuron_freezer: Optional[NeuronFreezer] = None
         # Fisher accumulator built during wake; finalized at WAKE->SLEEP.
         self.fisher_accumulator: Optional[Dict[str, torch.Tensor]] = None
         self.fisher_sample_count = 0
@@ -172,6 +186,25 @@ class CustomTrainer(Trainer):
             num_warmup_steps=args.warmup_steps,
             num_training_steps=args.max_steps,
         )
+
+        # Neuron-freezing plasticity decay (Method 3): grow a frozen-neuron set
+        # each cycle, mask its gradients every step. Built here so the base
+        # model and MLM head (used for causal attribution) already exist.
+        if self._freeze_enabled:
+            self._neuron_freezer = NeuronFreezer(
+                unwrap_model(self.model),
+                head=self.mlm_head,
+                mode=_pd.mode,
+                freeze_target=_pd.freeze_target,
+                first_m_layers=_pd.first_m_layers,
+                n_layers=_pd.n_layers,
+                freeze_type=_pd.freeze_type,
+                decay=_pd.decay,
+                plasticity_ceiling=_pd.plasticity_ceiling,
+                plasticity_decay_factor=_pd.plasticity_decay_factor,
+                seed=_pd.seed,
+                device=self.args.device,
+            )
 
     def _get_train_sampler(self):
         """
@@ -372,6 +405,19 @@ class CustomTrainer(Trainer):
             else inputs["labels"]
         )
 
+        # Cache the most recent WAKE batch for causal neuron-freezing attribution
+        # (the freeze event fires later, in _swap_phase, where no batch is in scope).
+        if (
+            track_per_sample
+            and self._freeze_enabled
+            and self.sleep_mechanism_cfg.plasticity_decay.mode == "causal"
+        ):
+            self._last_wake_batch = {
+                "input_ids": input_ids.detach(),
+                "attention_mask": inputs.get("attention_mask"),
+                "labels": labels.detach(),
+            }
+
         # Compute the loss
         if track_per_sample:
             # Per-sample squared gradient norms (Gain) for Gain x Need replay
@@ -443,6 +489,12 @@ class CustomTrainer(Trainer):
 
     def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
+
+        # Mask frozen-neuron gradients after backward, before the base optimizer
+        # steps. Runs in both WAKE and SLEEP so frozen rows stay frozen during
+        # replay too.
+        if self._freeze_enabled and self._neuron_freezer is not None:
+            self._neuron_freezer.mask_gradients(unwrap_model(model))
 
         # == SLEEP MECHANISM == #
         if self.sleep_mechanism_cfg:
@@ -706,9 +758,13 @@ class CustomTrainer(Trainer):
 
             # save step count
             step_file = os.path.join(output_dir, "trainer_state.json")
-            # write current step count to file inside checkpoint folder
+            # write step count (+ frozen-neuron set) to the checkpoint folder
             with open(step_file, "w") as f:
-                json.dump({"global_step": self.global_step}, f)
+                payload = {"global_step": self.global_step}
+                if self._neuron_freezer is not None:
+                    # JSON-serialisable (ints + RNG tuple); no pickle/tensors.
+                    payload["neuron_freezer"] = self._neuron_freezer.state_dict()
+                json.dump(payload, f)
 
             mlm_model_dir = os.path.join(output_dir, "lm_model")
             task_heads_dir = os.path.join(output_dir, "task_heads")
@@ -771,6 +827,9 @@ class CustomTrainer(Trainer):
             with open(step_file, "r") as f:
                 state = json.load(f)
                 self.global_step = state.get("global_step", 0)
+                # Restore the frozen-neuron set (absent for non-freeze runs).
+                if self._neuron_freezer is not None and "neuron_freezer" in state:
+                    self._neuron_freezer.load_state_dict(state["neuron_freezer"])
 
     def _load_best_model(self):
         super()._load_best_model()
@@ -883,9 +942,18 @@ class CustomTrainer(Trainer):
             )
             self.log({"sleep_table": _sleep_table})
             
-            # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
+            # Plasticity decay at SLEEP->WAKE. Two mechanisms, by decay_type:
             if self._plasticity_decay_enabled:
+                # Fisher-protected multiplicative shrink (uses the previous wake's Fisher).
                 self._apply_fisher_shrink()
+            elif self._freeze_enabled and self._neuron_freezer is not None:
+                # Neuron freezing: grow the frozen set once warmup has elapsed.
+                warmup = (
+                    self.sleep_mechanism_cfg.plasticity_decay.freezing_ratio
+                    * self.args.max_steps
+                )
+                if self.global_step >= warmup:
+                    self._neuron_freezer.freeze_increment(self._last_wake_batch)
 
         # Utility replay needs Need scores keyed by the same indices as gain
         # (the canonical candidate pool for utility selection).

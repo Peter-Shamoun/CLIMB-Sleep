@@ -177,6 +177,29 @@ class PlasticityDecayParams(DictConfig):
     # Fraction of weights protected from shrink (ranked by empirical Fisher diagonal).
     protect_top_fraction: float = 0.20
 
+    # === Neuron-freezing plasticity decay (decay_type="freeze") ===
+    # Fisher fields above are ignored when decay_type == "freeze".
+    # Neuron selection: "random" (control) or "causal" (Captum LayerIntegratedGradients).
+    mode: str = "random"
+    # Which Linear projections are freezable: "mlp" | "attn" | "all".
+    freeze_target: str = "mlp"
+    # Only consider transformer layers with index < first_m_layers (<=0 disables).
+    first_m_layers: int = -1
+    # At each freeze event, restrict to a random subset of this many layers (<=0 = all).
+    n_layers: int = -1
+    # "complete" zeroes frozen-row grads; "partial" scales them by plasticity_decay_factor.
+    freeze_type: str = "complete"
+    # delta: fraction of a module's remaining freezable pool to freeze each cycle.
+    decay: float = 0.1
+    # c: max fraction of a module's neurons that may ever be frozen.
+    plasticity_ceiling: float = 0.5
+    # Grad scale factor for partial freezing.
+    plasticity_decay_factor: float = 0.1
+    # Warmup: first freeze fires only after global_step >= freezing_ratio * max_steps.
+    freezing_ratio: float = 0.25
+    # RNG seed for random selection / layer subsetting.
+    seed: int = 0
+
 
 # Sleep mechanism params
 @dataclass
