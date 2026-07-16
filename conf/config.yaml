@@ -3,7 +3,7 @@ defaults:
   - _self_
   - dataset: strict
   - objective_curriculum: base_mlm
-  - model: roberta_pln_small
+  - model: gpt2_small
   - tokenizer: cbt_8192
   # Uncomment the following line to enable sleep mechanism:
   - sleep_mechanism: default

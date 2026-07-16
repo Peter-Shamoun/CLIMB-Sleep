@@ -6,6 +6,7 @@ from transformers import PreTrainedModel
 from ..config import BabyLMConfig
 from .registry import CONFIG_REGISTRY, MODEL_REGISTRY
 from .roberta import *
+from .gpt2 import *
 
 # A logger for this file
 logger = logging.getLogger(__name__)

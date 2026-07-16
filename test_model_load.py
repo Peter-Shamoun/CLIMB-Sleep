@@ -15,7 +15,6 @@ cs.store(name="base_config", node=BabyLMConfig)
 # A logger for this file
 logger = logging.getLogger(__name__)
 
-@record
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: BabyLMConfig):
     logger.info("Initializing model")
