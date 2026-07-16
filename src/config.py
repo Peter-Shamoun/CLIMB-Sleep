@@ -11,7 +11,7 @@ class ExperimentParams(DictConfig):
     seed: int
 
     # Name of the experiment - needs to be set at runtime
-    name: str = None
+    name: str = "autogen$$"
 
     # Name of wandb entity experiment belongs to
     entity: str = MISSING

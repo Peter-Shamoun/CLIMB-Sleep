@@ -114,6 +114,16 @@ def main(cfg: BabyLMConfig):
             os.environ["WANDB_RESUME"] = "allow"
 
         # Check if we're on process 0
+        if cfg.experiment.name == "autogen$$":
+            if cfg.sleep_mechanism:
+                cfg.experiment.name = "sleep_run"
+                cfg.experiment.name += f"_rr_{cfg.sleep_mechanism.replay_ratio}"
+                cfg.experiment.name += f"_np_{cfg.sleep_mechanism.n_phases}"
+                cfg.experiment.name += f"_swr_{cfg.sleep_mechanism.sleep_wake_ratio}"
+            else:
+                cfg.experiment.name = "baseline_run"
+            if cfg.experiment.seed is not None:
+                cfg.experiment.name += f"-{cfg.experiment.seed}"
         if int(os.environ.get("RANK", "0")) == 0:
             wandb.init(
                 entity=cfg.experiment.entity,

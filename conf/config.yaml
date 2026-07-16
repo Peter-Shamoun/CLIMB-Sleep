@@ -19,6 +19,7 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
+  name: "autogen$$" # Set to "autogen$$" to automatically generate
   output_dir: "/mnt/data"
 
 data_preprocessing:
