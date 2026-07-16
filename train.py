@@ -1,4 +1,4 @@
-"""Train a RoBERTa model on the BabyLM dataset."""
+"""Train a sleep model on the BabyLM dataset."""
 
 import logging
 import os
