@@ -8,6 +8,7 @@ import hydra
 from hydra.core.config_store import ConfigStore
 
 from src.config import BabyLMConfig
+from src.models import load_base_model
 
 # type-checks dynamic config file
 cs = ConfigStore.instance()
