@@ -137,7 +137,7 @@ class CustomTrainer(Trainer):
 
         self.phase_steps = 0
 
-        # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
+        # NOTE: The hidden dimension of the base model is the input dimension to the task head
         # We check that this variable is set in the config file when loading the base model
 
         self.hidden_rep_size = hydra_config.model.model_kwargs["hidden_size"]
@@ -152,26 +152,26 @@ class CustomTrainer(Trainer):
         self.global_step = 0
 
         # Initialize MLM task head
-        mlm_head_config = RobertaConfig(
-            vocab_size=self.tokenizer.vocab_size,  # type: ignore
-            hidden_size=self.hidden_rep_size,
-        )
+        # mlm_head_config = RobertaConfig(
+        #     vocab_size=self.tokenizer.vocab_size,  # type: ignore
+        #     hidden_size=self.hidden_rep_size,
+        # )
 
-        self.mlm_head = RobertaPreLayerNormLMHead(mlm_head_config).to(
-            self.args.device
-        )
+        # self.mlm_head = RobertaPreLayerNormLMHead(mlm_head_config).to(
+        #     self.args.device
+        # )
 
-        # Setting up optimizer and scheduler for task head
-        self.mlm_optimizer = AdamW(
-            self.mlm_head.parameters(),
-            lr=1e-3,
-        )
+        # # Setting up optimizer and scheduler for task head
+        # self.mlm_optimizer = AdamW(
+        #     self.mlm_head.parameters(),
+        #     lr=1e-3,
+        # )
 
-        self.mlm_scheduler = get_linear_schedule_with_warmup(
-            self.mlm_optimizer,
-            num_warmup_steps=args.warmup_steps,
-            num_training_steps=args.max_steps,
-        )
+        # self.mlm_scheduler = get_linear_schedule_with_warmup(
+        #     self.mlm_optimizer,
+        #     num_warmup_steps=args.warmup_steps,
+        #     num_training_steps=args.max_steps,
+        # )
 
     def _get_train_sampler(self):
         """
@@ -363,9 +363,10 @@ class CustomTrainer(Trainer):
                 else None
             ),
         )
-        base_model_hidden_states = base_model_outputs[0]
+        # base_model_hidden_states = base_model_outputs[0]
+        logits = base_model_outputs[0]
 
-        logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
+        # logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
             override_labels
             if override_labels is not None
@@ -384,7 +385,7 @@ class CustomTrainer(Trainer):
             if need_per_sample_grads:
                 grads_dict = per_sample_grads(
                     unwrap_model(model),
-                    self.mlm_head,
+                    # self.mlm_head,
                     input_ids,
                     inputs["attention_mask"],
                     labels,
@@ -463,9 +464,9 @@ class CustomTrainer(Trainer):
                 self._swap_phase(sampler, phase, next_phase)
 
         # Train task head
-        self.mlm_optimizer.step()
-        self.mlm_scheduler.step()
-        self.mlm_head.zero_grad()
+        # self.mlm_optimizer.step()
+        # self.mlm_scheduler.step()
+        # self.mlm_head.zero_grad()
 
         return loss
 
@@ -669,12 +670,12 @@ class CustomTrainer(Trainer):
 
     def _initialize_full_lm_model(self):
         """
-        Initialize a full language model that includes the base model and the mlm head.
+        Initialize a full language model that includes the base model and the task head.
         """
 
         # copy hydra config and change base_model to include mlm head
         lm_config = copy.deepcopy(self.hydra_config)
-        lm_config.model.name = lm_config.model.name + "_mlm"
+        lm_config.model.name = lm_config.model.name + "_" + lm_config.task.task
 
         lm_model = load_base_model(lm_config)
 
@@ -684,7 +685,7 @@ class CustomTrainer(Trainer):
             f"{lm_model.base_model_prefix}",
             unwrap_model(self.model.base_model),
         )
-        lm_model.lm_head = unwrap_model(self.mlm_head)
+        # lm_model.lm_head = unwrap_model(self.mlm_head)
 
         return lm_model
 
@@ -711,9 +712,9 @@ class CustomTrainer(Trainer):
                 json.dump({"global_step": self.global_step}, f)
 
             mlm_model_dir = os.path.join(output_dir, "lm_model")
-            task_heads_dir = os.path.join(output_dir, "task_heads")
+            # task_heads_dir = os.path.join(output_dir, "task_heads")
             os.makedirs(mlm_model_dir, exist_ok=True)
-            os.makedirs(task_heads_dir, exist_ok=True)
+            # os.makedirs(task_heads_dir, exist_ok=True)
 
             # save the full language model + the associated tokenizer (for inference)
             lm_model = self._initialize_full_lm_model()
@@ -721,48 +722,48 @@ class CustomTrainer(Trainer):
 
             self.tokenizer.save_pretrained(mlm_model_dir)
 
-            torch.save(
-                unwrap_model(self.mlm_head).state_dict(),
-                os.path.join(task_heads_dir, f"mlm_task_head.pt"),
-            )
+            # torch.save(
+            #     unwrap_model(self.mlm_head).state_dict(),
+            #     os.path.join(task_heads_dir, f"mlm_task_head.pt"),
+            # )
 
-            torch.save(
-                self.mlm_optimizer.state_dict(),
-                os.path.join(task_heads_dir, f"mlm_optimizer.pt"),
-            )
-            torch.save(
-                self.mlm_scheduler.state_dict(),
-                os.path.join(task_heads_dir, f"mlm_scheduler.pt"),
-            )
+            # torch.save(
+            #     self.mlm_optimizer.state_dict(),
+            #     os.path.join(task_heads_dir, f"mlm_optimizer.pt"),
+            # )
+            # torch.save(
+            #     self.mlm_scheduler.state_dict(),
+            #     os.path.join(task_heads_dir, f"mlm_scheduler.pt"),
+            # )
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
         super()._load_from_checkpoint(resume_from_checkpoint, model=model)
 
-        task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
-        self.mlm_head.load_state_dict(
-            torch.load(
-                os.path.join(
-                    task_head_dir, f"{self.task_unit_name}_task_head.pt"
-                ),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_optimizer.load_state_dict(
-            torch.load(
-                os.path.join(
-                    task_head_dir, f"{self.task_unit_name}_optimizer.pt"
-                ),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_scheduler.load_state_dict(
-            torch.load(
-                os.path.join(
-                    task_head_dir, f"{self.task_unit_name}_scheduler.pt"
-                ),
-                map_location=self.args.device,
-            )
-        )
+        # task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
+        # self.mlm_head.load_state_dict(
+        #     torch.load(
+        #         os.path.join(
+        #             task_head_dir, f"{self.task_unit_name}_task_head.pt"
+        #         ),
+        #         map_location=self.args.device,
+        #     )
+        # )
+        # self.mlm_optimizer.load_state_dict(
+        #     torch.load(
+        #         os.path.join(
+        #             task_head_dir, f"{self.task_unit_name}_optimizer.pt"
+        #         ),
+        #         map_location=self.args.device,
+        #     )
+        # )
+        # self.mlm_scheduler.load_state_dict(
+        #     torch.load(
+        #         os.path.join(
+        #             task_head_dir, f"{self.task_unit_name}_scheduler.pt"
+        #         ),
+        #         map_location=self.args.device,
+        #     )
+        # )
 
         # load step count
         step_file = os.path.join(resume_from_checkpoint, "trainer_state.json")
@@ -775,27 +776,27 @@ class CustomTrainer(Trainer):
     def _load_best_model(self):
         super()._load_best_model()
 
-        task_head_dir = os.path.join(
-            self.state.best_model_checkpoint, "task_heads"
-        )
-        self.mlm_head.load_state_dict(
-            torch.load(
-                os.path.join(task_head_dir, f"mlm_task_head.pt"),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_optimizer.load_state_dict(
-            torch.load(
-                os.path.join(task_head_dir, f"mlm_optimizer.pt"),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_scheduler.load_state_dict(
-            torch.load(
-                os.path.join(task_head_dir, f"mlm_scheduler.pt"),
-                map_location=self.args.device,
-            )
-        )
+        # task_head_dir = os.path.join(
+        #     self.state.best_model_checkpoint, "task_heads"
+        # )
+        # self.mlm_head.load_state_dict(
+        #     torch.load(
+        #         os.path.join(task_head_dir, f"mlm_task_head.pt"),
+        #         map_location=self.args.device,
+        #     )
+        # )
+        # self.mlm_optimizer.load_state_dict(
+        #     torch.load(
+        #         os.path.join(task_head_dir, f"mlm_optimizer.pt"),
+        #         map_location=self.args.device,
+        #     )
+        # )
+        # self.mlm_scheduler.load_state_dict(
+        #     torch.load(
+        #         os.path.join(task_head_dir, f"mlm_scheduler.pt"),
+        #         map_location=self.args.device,
+        #     )
+        # )
 
     def _wrap_model(self, model):
         if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
@@ -986,7 +987,7 @@ class CustomTrainer(Trainer):
             fisher=self.fisher_diagonal,
             modules={
                 "model": unwrap_model(self.model),
-                "mlm_head": self.mlm_head,
+                # "mlm_head": self.mlm_head,
             },
             shrink_factor=cfg.shrink_factor,
             protect_top_fraction=cfg.protect_top_fraction,

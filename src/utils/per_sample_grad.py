@@ -33,7 +33,7 @@ def prepare_4d_mask(attention_mask, dtype):
 
 def per_sample_grads(
     model: Module,
-    mlm_head: Module,
+    # mlm_head: Module,
     input_ids: Tensor,
     attention_mask: Tensor,
     labels: Tensor,
@@ -47,29 +47,39 @@ def per_sample_grads(
     base_params = {
         k: v.detach() for k, v in model.named_parameters() if v.requires_grad
     }
-    head_params = {
-        k: v.detach()
-        for k, v in mlm_head.named_parameters()
-        if v.requires_grad
-    }
+    # head_params = {
+    #     k: v.detach()
+    #     for k, v in mlm_head.named_parameters()
+    #     if v.requires_grad
+    # }
     base_buffers = {k: v.detach() for k, v in model.named_buffers()}
-    head_buffers = {k: v.detach() for k, v in mlm_head.named_buffers()}
+    # head_buffers = {k: v.detach() for k, v in mlm_head.named_buffers()}
 
-    def loss_fn(base_p, head_p, base_b, head_b, x, attn, y):
+    def loss_fn(base_p,
+                # head_p,
+                base_b,
+                # head_b,
+                x, attn, y):
         x_b = x.unsqueeze(0)
         attn_b = attn.unsqueeze(0)
         y_b = y.unsqueeze(0)
-        base_out = functional_call(
+        # base_out = functional_call(
+        #     model,
+        #     (base_p, base_b),
+        #     args=(),
+        #     kwargs={"input_ids": x_b, "attention_mask": attn_b},
+        # )
+        # hidden = base_out[0]
+        # logits = functional_call(
+        #     mlm_head,
+        #     (head_p, head_b),
+        #     args=(hidden,),
+        # ).transpose(-1, -2)
+        logits = functional_call(
             model,
             (base_p, base_b),
             args=(),
             kwargs={"input_ids": x_b, "attention_mask": attn_b},
-        )
-        hidden = base_out[0]
-        logits = functional_call(
-            mlm_head,
-            (head_p, head_b),
-            args=(hidden,),
         ).transpose(-1, -2)
         # Mean over unmasked positions with clamp(min=1). All-(-100) samples
         # would otherwise produce 0/0 = NaN here, propagating into the
@@ -105,7 +115,10 @@ def per_sample_grads(
 
     for start in range(0, batch_size, chunk_size):
         bg, hg = per_sample(
-            base_params, head_params, base_buffers, head_buffers,
+            base_params,
+            # head_params,
+            base_buffers,
+            # head_buffers,
             input_ids[start:start+chunk_size],
             attention_mask_4d[start:start+chunk_size],
             labels[start:start+chunk_size],
@@ -115,13 +128,13 @@ def per_sample_grads(
 
     # bg and hg are dicts of {param_name: [chunk_size, *param_shape]}
     base_grads = {k: torch.cat([c[k] for c in chunk_base_grads], dim=0) for k in base_params}
-    head_grads  = {k: torch.cat([c[k] for c in chunk_head_grads],  dim=0) for k in head_params}
+    # head_grads  = {k: torch.cat([c[k] for c in chunk_head_grads],  dim=0) for k in head_params}
 
     out: Dict[str, Tensor] = {}
     for k, v in base_grads.items():
         out[f"model.{k}"] = v
-    for k, v in head_grads.items():
-        out[f"mlm_head.{k}"] = v
+    # for k, v in head_grads.items():
+    #     out[f"mlm_head.{k}"] = v
     return out
 
 
