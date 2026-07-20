@@ -110,12 +110,12 @@ def per_sample_grads(
     #     labels,
     # )
     chunk_base_grads = []
-    chunk_head_grads = []
+    # chunk_head_grads = []
     batch_size = input_ids.shape[0]
     chunk_size = 8 # TODO: make this a config parameter somehow
 
     for start in range(0, batch_size, chunk_size):
-        bg, hg = per_sample(
+        bg = per_sample(
             base_params,
             # head_params,
             base_buffers,
@@ -125,7 +125,7 @@ def per_sample_grads(
             labels[start:start+chunk_size],
         )
         chunk_base_grads.append(bg)
-        chunk_head_grads.append(hg)
+        # chunk_head_grads.append(hg)
 
     # bg and hg are dicts of {param_name: [chunk_size, *param_shape]}
     base_grads = {k: torch.cat([c[k] for c in chunk_base_grads], dim=0) for k in base_params}
