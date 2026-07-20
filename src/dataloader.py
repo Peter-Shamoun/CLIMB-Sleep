@@ -59,12 +59,14 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             raise NotImplementedError(
                 "IterDataPipe and MapDataPipe are not supported yet"
             )
+            
+        mlm = self.config.task.task == "mlm"
 
         self._collate_fn = SleepCollatorForLanguageModeling(
             sampler=loader.sampler,
             tokenizer=loader.tokenizer,
-            mlm=True,
-            mlm_probability=self.config.trainer.mask_probability
+            mlm=mlm,
+            mlm_probability=self.config.task.optional_kwargs['mask_probability'] if mlm else None
         )
         self._dataset_fetcher = _DatasetKind.create_fetcher(
             self._dataset_kind,

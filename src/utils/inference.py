@@ -74,8 +74,6 @@ def compute_trainer_perplexity(
     masked_input = masked_input.view(-1, seq_len)
     labels = labels.view(-1, seq_len)
 
-    # NOTE: The 'mlm' unit is always in the objective curriculum
-    # (this is checked by ObjectiveCurriculum.__init__)
     loss = trainer.compute_loss(
         trainer.model,
         {},  # We don't provide a standard batch of data
