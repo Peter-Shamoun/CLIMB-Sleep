@@ -50,7 +50,6 @@ def compute_trainer_perplexity(
 
     # (Batch, #repetitions dimension, seq len)
     input_ids = input_ids.unsqueeze(1).to(trainer.args.device)
-
     # If MLM, mask input tokens one-by-one
     if trainer.task_name == "mlm":
         repeat_ids = input_ids.repeat([1, seq_len, 1])
@@ -64,7 +63,8 @@ def compute_trainer_perplexity(
 
         # For each batch, set the labels to be the original input ids (all others to ignore_index=-100)
         labels = repeat_ids.masked_fill(masked_input != mask_idx, -100)
-
+    else:
+        labels = input_ids
     # For each batch, if the label is a special token, set it to -100 (ignore_index)
     special_tokens_mask = (
         batch["special_tokens_mask"].unsqueeze(1).to(trainer.args.device)
