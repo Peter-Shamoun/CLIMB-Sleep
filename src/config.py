@@ -99,7 +99,11 @@ class TrainerParams(DictConfig):
 @dataclass
 class TaskParams(DictConfig):
     # Sets learning objective and task
-    steps: Dict[str, List[float]]
+    # steps: Dict[str, List[float]] # No need, one task throughout
+    
+    # Task: either mlm or clm
+    task: str
+    
     # parameters for the task head architecture
     task_head_params: Optional[Dict[str, Any]] = field(default_factory=dict)
 
@@ -194,6 +198,6 @@ class BabyLMConfig(DictConfig):
     data_preprocessing: DataPreprocessingParams
     model: ModelParams
     trainer: TrainerParams
-    objective_curriculum: ObjectiveCurriculumParams
+    task: TaskParams
 
     sleep_mechanism: Optional[SleepMechanismParams] = None

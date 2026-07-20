@@ -1,13 +1,10 @@
-steps: {
-  "mlm": [0.0,1.0], 
+task: "mlm"
+task_head_params: {}
+optimizer_params: { 
+  "lr": 1e-3,
 }
-task: 
-  task_head_params: {}
-  optimizer_params: { 
-    "lr": 1e-3,
-  }
-  scheduler_params: {}
-  optional_kwargs: { 
-    "mask_probability": 0.15,
-    "unmask_probability" : 0,
-  }
+scheduler_params: {}
+optional_kwargs: { 
+  "mask_probability": 0.15,
+  "unmask_probability" : 0,
+}
