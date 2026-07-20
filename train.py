@@ -206,7 +206,7 @@ def main(cfg: BabyLMConfig):
         run_name=cfg.experiment.name,
         report_to=["wandb"]
         if not cfg.experiment.offline_run
-        else None,  # wandb deactivated for offline runs
+        else [],  # wandb deactivated for offline runs
         save_strategy="steps",
         hub_strategy="every_save",
         push_to_hub=False,
