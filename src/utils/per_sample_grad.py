@@ -96,7 +96,8 @@ def per_sample_grads(
     # sample inside vmap, matching what a regular batched forward would produce.
     per_sample = vmap(
         grad_fn,
-        in_dims=(None, None, None, None, 0, 0, 0),
+        # in_dims=(None, None, None, None, 0, 0, 0),
+        in_dims=(None, None, 0, 0, 0),
         randomness="different",
     )
     # base_grads, head_grads = per_sample(
