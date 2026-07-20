@@ -21,7 +21,6 @@ experiment:
   group: "sleep-consolidated-learning"
   name: "default-run"
   output_dir: "/mnt/data"
-  offline_run: True
 
 data_preprocessing:
   include_punctuation: True

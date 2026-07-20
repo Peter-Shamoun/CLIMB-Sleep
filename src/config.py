@@ -92,10 +92,14 @@ class TrainerParams(DictConfig):
 ### Curriculum learning parameter: can be either objective or data-driven ###
 
 
-## Objective curriculum learning parameters ##
-@dataclass
-class ObjectiveCurriculumUnitParams(DictConfig):
+# ## Objective curriculum learning parameters ##
+# @dataclass
+# class TaskParams(DictConfig):
 
+@dataclass
+class TaskParams(DictConfig):
+    # Sets learning objective and task
+    steps: Dict[str, List[float]]
     # parameters for the task head architecture
     task_head_params: Optional[Dict[str, Any]] = field(default_factory=dict)
 
@@ -107,14 +111,6 @@ class ObjectiveCurriculumUnitParams(DictConfig):
 
     # Additional optional kwargs dependent on the objective curriculum unit
     optional_kwargs: Optional[Dict[str, Any]] = field(default_factory=dict)
-
-
-@dataclass
-class ObjectiveCurriculumParams(DictConfig):
-    # objective curriculum learning parameters
-
-    units: Dict[str, ObjectiveCurriculumUnitParams]
-    steps: Dict[str, List[float]]
 
 
 ## Data-driven curriculum learning parameters ##
@@ -130,39 +126,9 @@ class PacingFunctionParams(Mapping[str, Any]):
     # end of the curriculum
     max_difficulty: Optional[float] = 1.0
 
-
 # Difficulty Scorer Parameters
 
 DifficultyScorerKwargsType = Optional[Dict[str, Any]]
-
-
-@dataclass
-class DataCurriculumParams(DictConfig):
-    # data-driven curriculum learning parameters
-
-    # the column of the data to sort by (aka n_gram perplexity, sentence length, etc.)
-    difficulty_scorer_name: str
-
-    difficulty_scorer_kwargs: DifficultyScorerKwargsType
-
-    # one of ['linear', 'quad', 'root', 'step', 'exp', 'log'] or None, meaning no pacing
-    pacing_fn_name: str
-
-    pacing_fn_kwargs: PacingFunctionParams
-
-
-## Vocabulary curriculum parameters ##
-@dataclass
-class VocabularyCurriculumParams(DictConfig):
-    # vocabulary curriculum learning parameters
-
-    # the curriculum used to determine which tokens to map to <unk> (aka token_ids, part of speech etc.)
-    vocabulary_curriculum_name: str
-
-    # one of ['linear', 'quad', 'root', 'step', 'exp', 'log'] or None, meaning no pacing
-    pacing_fn_name: str
-
-    pacing_fn_kwargs: PacingFunctionParams
 
 
 # Plasticity decay for sleep mechanism
@@ -229,7 +195,5 @@ class BabyLMConfig(DictConfig):
     model: ModelParams
     trainer: TrainerParams
     objective_curriculum: ObjectiveCurriculumParams
-    data_curriculum: Optional[DataCurriculumParams] = None
-    vocabulary_curriculum: Optional[VocabularyCurriculumParams] = None
 
     sleep_mechanism: Optional[SleepMechanismParams] = None
