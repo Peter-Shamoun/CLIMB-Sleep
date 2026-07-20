@@ -87,14 +87,17 @@ def compute_trainer_perplexity(
         },
         inference=True,
     )
-    # print("LOSS:", loss, loss.shape)
-    # loss is a tensor (batch * seq_len, seq_len), where in the second dimension only at most one
-    # token should be non-zero (the masked token). We sum over the second dimension to get the
-    # loss for each token in each batch
-    loss = loss.sum(dim=-1)
 
-    # Now loss is a vector of (batch * seq_len) length, we reshape it to (batch, seq_len)
-    loss = loss.view(batch_size, seq_len)
+    # If mlm, then loss is a tensor (batch * seq_len, seq_len), where in the 
+    # second dimension only at most one token should be non-zero (the masked 
+    # token). We have to reshape the losses to be (batch, seq_len)
+    if trainer.task_name == "mlm":
+        #  We sum over the second dimension to get the loss for each token in each batch
+        loss = loss.sum(dim=-1)
+
+        # Now loss is a vector of (batch * seq_len) length, we reshape it to (batch, seq_len)
+        loss = loss.view(batch_size, seq_len)
+    
     # we can now sum over the second dimension to get the loss for each sample
     summed_loss = loss.sum(dim=-1)
 
