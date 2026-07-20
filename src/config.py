@@ -85,8 +85,6 @@ class TrainerParams(DictConfig):
     eval_perplexity: bool
     n_eval_samples: int
     eval_batch_size: int
-    mask_probability: float
-    unmask_probability: float
 
 
 ### Curriculum learning parameter: can be either objective or data-driven ###
