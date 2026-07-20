@@ -19,9 +19,8 @@ experiment:
   seed: 42
   entity: "lemn-lab"
   group: "sleep-consolidated-learning"
-  name: "default-run"
+  name: "clm-test-run"
   output_dir: "/mnt/data"
-  offline_run: True
 
 data_preprocessing:
   include_punctuation: True

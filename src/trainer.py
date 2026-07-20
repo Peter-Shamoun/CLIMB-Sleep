@@ -425,10 +425,10 @@ class CustomTrainer(Trainer):
             return loss
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
-        loss_metrics["loss_mlm"] = total_unit_loss_scalar
+        loss_metrics[f"loss_{self.task_name}"] = total_unit_loss_scalar
         if self.sleep_mechanism_cfg:
             curr_phase = self.callback_handler.train_dataloader.sampler.phase
-            loss_metrics[f"loss_mlm_{curr_phase}"] = total_unit_loss_scalar
+            loss_metrics[f"loss_{self.task_name}_{curr_phase}"] = total_unit_loss_scalar
 
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
