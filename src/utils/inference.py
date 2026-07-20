@@ -73,7 +73,7 @@ def compute_trainer_perplexity(
 
     # combining the repeated input ids dimension (2nd dim) with the batch dim (1st dim)
     # NOTE this gives an effective batch size = batch_size * seq_len
-    eval_input = masked_input if trainer.task == "mlm" else input_ids
+    eval_input = masked_input if trainer.task_name == "mlm" else input_ids
     masked_input = eval_input.view(-1, seq_len)
     labels = labels.view(-1, seq_len)
 
