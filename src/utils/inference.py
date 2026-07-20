@@ -52,7 +52,7 @@ def compute_trainer_perplexity(
     input_ids = input_ids.unsqueeze(1).to(trainer.args.device)
 
     # If MLM, mask input tokens one-by-one
-    if trainer.task_name == "mlm"
+    if trainer.task_name == "mlm":
         repeat_ids = input_ids.repeat([1, seq_len, 1])
 
         mask = (
