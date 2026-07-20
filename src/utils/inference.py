@@ -51,17 +51,19 @@ def compute_trainer_perplexity(
     # (Batch, #repetitions dimension, seq len)
     input_ids = input_ids.unsqueeze(1).to(trainer.args.device)
 
-    repeat_ids = input_ids.repeat([1, seq_len, 1])
+    # If MLM, mask input tokens one-by-one
+    if trainer.task_name == "mlm"
+        repeat_ids = input_ids.repeat([1, seq_len, 1])
 
-    mask = (
-        torch.ones(input_ids.size(-1), device=trainer.args.device).diag(0)
-    ).repeat([batch_size, 1, 1])
+        mask = (
+            torch.ones(input_ids.size(-1), device=trainer.args.device).diag(0)
+        ).repeat([batch_size, 1, 1])
 
-    # Setting the diagonal for each batch to MASK token id (0)
-    masked_input = repeat_ids.masked_fill(mask == 1, mask_idx)
+        # Setting the diagonal for each batch to MASK token id (0)
+        masked_input = repeat_ids.masked_fill(mask == 1, mask_idx)
 
-    # For each batch, set the labels to be the original input ids (all others to ignore_index=-100)
-    labels = repeat_ids.masked_fill(masked_input != mask_idx, -100)
+        # For each batch, set the labels to be the original input ids (all others to ignore_index=-100)
+        labels = repeat_ids.masked_fill(masked_input != mask_idx, -100)
 
     # For each batch, if the label is a special token, set it to -100 (ignore_index)
     special_tokens_mask = (
@@ -71,13 +73,14 @@ def compute_trainer_perplexity(
 
     # combining the repeated input ids dimension (2nd dim) with the batch dim (1st dim)
     # NOTE this gives an effective batch size = batch_size * seq_len
-    masked_input = masked_input.view(-1, seq_len)
+    eval_input = masked_input if trainer.task == "mlm" else input_ids
+    masked_input = eval_input.view(-1, seq_len)
     labels = labels.view(-1, seq_len)
 
     loss = trainer.compute_loss(
         trainer.model,
         {},  # We don't provide a standard batch of data
-        override_input_ids=masked_input,
+        override_input_ids=eval_input,
         override_labels=labels,
         loss_kwargs={
             "reduction": "none",

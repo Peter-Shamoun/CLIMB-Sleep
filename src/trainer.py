@@ -112,6 +112,7 @@ class CustomTrainer(Trainer):
         self.eval_msgs = hydra_config.trainer.eval_msgs
         self.eval_perplexity = hydra_config.trainer.eval_perplexity
         self.sleep_table = sleep_table
+        self.task_name = hydra_config.task.task
 
         super().__init__(args=args, **kwargs)
 
@@ -400,6 +401,7 @@ class CustomTrainer(Trainer):
                 per_sample_score = cross_entropy(
                     logits, labels, reduction="none", **(loss_kwargs or {})
                 )
+                # Ignore non-masked tokens; same as avg. score if task is "clm"
                 mask = (labels != -100).float()
                 per_sample_score = (per_sample_score * mask).sum(dim=-1) / mask.sum(
                     dim=-1
