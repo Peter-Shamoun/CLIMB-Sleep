@@ -364,7 +364,7 @@ class CustomTrainer(Trainer):
             ),
         )
         # base_model_hidden_states = base_model_outputs[0]
-        logits = base_model_outputs[0]
+        logits = base_model_outputs[0].transpose(-1, -2)
 
         # logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
@@ -675,7 +675,7 @@ class CustomTrainer(Trainer):
 
         # copy hydra config and change base_model to include mlm head
         lm_config = copy.deepcopy(self.hydra_config)
-        lm_config.model.name = lm_config.model.name + "_" + lm_config.task.task
+        lm_config.model.name = lm_config.model.name #+ "_" + lm_config.task.task
 
         lm_model = load_base_model(lm_config)
 
