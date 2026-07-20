@@ -1,13 +1,8 @@
 EVAL_DATA_DIR=$1
-
-# Create virtual environment
-python -m venv .venv
-
-# Install dependencies into environment
-.venv/bin/python -m pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
-.venv/bin/python -m pip install hydra-core
-.venv/bin/python -m pip install wandb
-.venv/bin/python -m pip install -r requirements.txt
+# Install dependencies
+pip install --upgrade uv
+uv sync # also creates virtual environment
+uv pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
 echo "Dependencies installed"
 
 # Install evaluation pipeline
