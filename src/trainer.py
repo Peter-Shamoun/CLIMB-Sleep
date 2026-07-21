@@ -320,6 +320,7 @@ class CustomTrainer(Trainer):
         override_labels=None,
         loss_kwargs=None,
         inference=False,
+        return_outputs=False,
         **kwargs,
     ):
         """
@@ -356,7 +357,7 @@ class CustomTrainer(Trainer):
             if override_input_ids is not None
             else inputs["input_ids"]
         )
-        base_model_outputs = model(
+        outputs = model(
             input_ids=input_ids,
             attention_mask=(
                 inputs["attention_mask"]
@@ -364,15 +365,18 @@ class CustomTrainer(Trainer):
                 else None
             ),
         )
-        # base_model_hidden_states = base_model_outputs[0]
-        logits = base_model_outputs[0].transpose(-1, -2)
+        # base_model_hidden_states = outputs[0]
+        logits = outputs[0].transpose(-1, -2)
 
-        # logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
             override_labels
             if override_labels is not None
             else inputs["labels"]
         )
+
+        if self.task_name == "clm":
+            logits = logits[:, :, :-1].contiguous()
+            labels = labels[:, 1:].contiguous()
 
         # Compute the loss
         if track_per_sample:
@@ -442,7 +446,7 @@ class CustomTrainer(Trainer):
         ):
 
             self.log(loss_metrics)
-        return loss
+        return (loss, outputs) if return_outputs else loss
 
     def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
