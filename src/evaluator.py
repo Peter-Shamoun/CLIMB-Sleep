@@ -165,7 +165,9 @@ class BabyLMEvaluator(object):
                             continue
                         metric, value = line.split(":")
                         accuracies[f"babylm_{task}_{subtask}_{metric}"] = float(value)
-
+        if len(accuracies) == 0:
+            logger.info("Fast eval failed. No scores logged.")
+            return dict()
         accuracies["babylm_avg"] = sum(accuracies.values()) / len(accuracies)
             
         if self.world_size > 1:
