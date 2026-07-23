@@ -38,7 +38,7 @@ def per_sample_grads(
     attention_mask: Tensor,
     labels: Tensor,
 ) -> Dict[str, Tensor]:
-    """Per-sample gradients of the MLM loss w.r.t. trainable params.
+    """Per-sample gradients of the loss w.r.t. trainable params.
 
     Returns a dict keyed by ``"model.<name>"`` or ``"mlm_head.<name>"``. Each
     value has shape ``[batch, *param_shape]``. Only ``requires_grad=True``
@@ -91,7 +91,7 @@ def per_sample_grads(
     dtype = next(model.parameters()).dtype
     attention_mask_4d = prepare_4d_mask(attention_mask, dtype)
     
-    grad_fn = grad(loss_fn, argnums=(0, 1))
+    grad_fn = grad(loss_fn, argnums=1)
     # randomness='different' so dropout (or any RNG op) gets an independent mask per
     # sample inside vmap, matching what a regular batched forward would produce.
     per_sample = vmap(
