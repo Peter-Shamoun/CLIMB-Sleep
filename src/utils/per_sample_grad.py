@@ -82,12 +82,11 @@ def per_sample_grads(
             kwargs={"input_ids": x_b, "attention_mask": attn_b},
         )[0].transpose(-1, -2)
         
-        # Have to offset labels for causal modeling
+        # Have to offset logits for causal modeling - labels already adjusted
         if task == "mlm": # leave support for other task-specific transforms
             pass
         elif task == "clm":
             logits = logits[:, :, :-1].contiguous()
-            y_b = y_b[:, 1:].contiguous()
             
         # Mean over unmasked positions with clamp(min=1). All-(-100) samples
         # would otherwise produce 0/0 = NaN here, propagating into the
