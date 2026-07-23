@@ -620,6 +620,7 @@ class CustomTrainer(Trainer):
                 world_size=self.args.world_size,
                 dry_run=self.dry_run,
                 keep_predictions=is_best_run,
+                task=self.task_name
             )
             # Get average of blimp metrics
             babylm_metrics = babylm_evaluator()

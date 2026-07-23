@@ -111,6 +111,7 @@ class BabyLMEvaluator(object):
         world_size: int,
         dry_run: bool = False,
         keep_predictions: bool = False,
+        task: str = "mlm"
     ):
         """
         Args:
@@ -128,6 +129,7 @@ class BabyLMEvaluator(object):
         self.world_size = world_size
         self.dry_run = dry_run
         self.keep_predictions = keep_predictions
+        self.task = task
 
     def __call__(self) -> Union[Dict[str, Any], None]:
         """
@@ -139,7 +141,7 @@ class BabyLMEvaluator(object):
         cmd = (
             "cd lib/evaluation-pipeline-2025; ./eval_zero_shot_fast.sh "
             + self.out_dir
-            + f" {self.out_dir} mlm" # revision and architecture
+            + f" {self.out_dir} {self.task}" # revision and architecture
         )
         subprocess.run(cmd, shell=True)
 
@@ -150,7 +152,7 @@ class BabyLMEvaluator(object):
         # and get the accuracies from the eval_results.json files
         logger.info("BLIMP and AOA Evaluation script finished. Getting accuracies...")
         accuracies = {}
-        eval_results_dir = os.path.join(self.out_dir, "zero_shot/mlm")
+        eval_results_dir = os.path.join(self.out_dir, f"zero_shot/{self.task}")
         for task in os.listdir(eval_results_dir):
             for subtask in os.listdir(os.path.join(eval_results_dir, task)):
                 results_filepath = os.path.join(
