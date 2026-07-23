@@ -371,6 +371,7 @@ class CustomTrainer(Trainer):
                     input_ids,
                     inputs["attention_mask"],
                     labels,
+                    self.task_name
                 )   
                 if self._plasticity_decay_enabled:
                     self._accumulate_fisher(grads_dict)
