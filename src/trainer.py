@@ -897,9 +897,7 @@ class CustomTrainer(Trainer):
         cfg = self.sleep_mechanism_cfg.plasticity_decay
         apply_fisher_protected_shrink(
             fisher=self.fisher_diagonal,
-            modules={
-                "model": unwrap_model(self.model),
-            },
+            module=unwrap_model(self.model),
             shrink_factor=cfg.shrink_factor,
             protect_top_fraction=cfg.protect_top_fraction,
         )
