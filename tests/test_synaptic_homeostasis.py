@@ -164,6 +164,71 @@ def test_out_of_range_protect_fraction_rejected():
         )
 
 
+# --- 3. per-tensor vs global thresholds under scale heterogeneity ---
+
+
+def scale_heterogeneous_scores(model: nn.Module) -> dict:
+    """Scores where one tensor's values are three orders of magnitude larger
+    than every other tensor's. A single pooled quantile cannot see past it."""
+    scores = {}
+    for name, param in model.named_parameters():
+        base = torch.linspace(0.0, 1.0, param.numel()).reshape(param.shape)
+        scores[name] = base * (1000.0 if name == "lm_head.weight" else 1.0)
+    return scores
+
+
+def protected_fraction(model, scores, scope, protect=0.25):
+    before = {n: p.detach().clone() for n, p in model.named_parameters()}
+    apply_fisher_protected_shrink(
+        fisher=scores,
+        module=model,
+        shrink_factor=SHRINK,
+        protect_top_fraction=protect,
+        threshold_scope=scope,
+    )
+    out = {}
+    for name, param in model.named_parameters():
+        untouched = torch.isclose(param.data, before[name])
+        out[name] = untouched.float().mean().item()
+    return out
+
+
+def test_per_tensor_scope_protects_the_fraction_inside_every_tensor():
+    model = ToyLM()
+    fractions = protected_fraction(
+        model, scale_heterogeneous_scores(model), "per_tensor"
+    )
+    for name, frac in fractions.items():
+        assert 0.15 < frac < 0.35, (
+            f"{name} protected {frac:.2%}, expected ~25% — per-tensor ranking "
+            "should allocate the fraction within each tensor"
+        )
+
+
+def test_global_scope_lets_one_tensor_dominate_the_cutoff():
+    """Documents why per_tensor is the default. With pooled ranking the
+    large-magnitude tensor absorbs the whole protected budget and the others
+    get essentially nothing."""
+    model = ToyLM()
+    fractions = protected_fraction(
+        model, scale_heterogeneous_scores(model), "global"
+    )
+    assert fractions["lm_head.weight"] > 0.5
+    assert fractions["dense.weight"] < 0.05
+
+
+def test_unknown_threshold_scope_rejected():
+    model = ToyLM()
+    with pytest.raises(ValueError, match="threshold_scope"):
+        apply_fisher_protected_shrink(
+            fisher=uniform_scores(model),
+            module=model,
+            shrink_factor=SHRINK,
+            protect_top_fraction=0.2,
+            threshold_scope="per_layer",
+        )
+
+
 # --- 5. tied weights are shrunk once, not twice ---
 
 

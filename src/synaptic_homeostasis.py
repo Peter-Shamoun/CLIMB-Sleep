@@ -33,6 +33,7 @@ def apply_fisher_protected_shrink(
     module: Module,
     shrink_factor: float,
     protect_top_fraction: float,
+    threshold_scope: str = "per_tensor",
 ) -> None:
     """In-place: scale all weights by ``shrink_factor`` except the top
     ``protect_top_fraction`` by importance value.
@@ -44,6 +45,8 @@ def apply_fisher_protected_shrink(
         module: the (unwrapped) model whose parameters are shrunk.
         shrink_factor: scalar in (0, 1] applied to non-protected weights.
         protect_top_fraction: fraction of weights kept at full magnitude.
+        threshold_scope: ``"per_tensor"`` or ``"global"``; see
+            ``_fisher_threshold``.
 
     Raises:
         RuntimeError: if a non-empty ``fisher`` matches no parameter. That
@@ -58,7 +61,9 @@ def apply_fisher_protected_shrink(
             f"protect_top_fraction must be in [0, 1], got {protect_top_fraction}"
         )
 
-    threshold = _fisher_threshold(fisher, protect_top_fraction)
+    threshold = _fisher_threshold(
+        fisher, protect_top_fraction, threshold_scope
+    )
     # First pass: dedupe by storage ptr. Tied weights (e.g., word embeddings
     # shared with the LM head) produce the same data_ptr() and must be shrunk
     # only once. We collect BEFORE any modification because torch.where below
@@ -94,19 +99,25 @@ def apply_fisher_protected_shrink(
             )
         )
 
+    protected_elements = 0
+    total_elements = 0
     with torch.no_grad():
         for name, param in to_shrink:
-            protect = fisher[name] >= threshold
+            protect = fisher[name] >= threshold[name]
             param.data = torch.where(
                 protect, param.data, param.data * shrink_factor
             )
-    shrunk_params = len(to_shrink)
+            protected_elements += int(protect.sum())
+            total_elements += protect.numel()
     logger.info(
-        "Importance shrink applied: shrunk=%d params, threshold=%.4e, "
-        "tied-skipped=%d, no-score-skipped=%d, shrink_factor=%.3f, "
-        "protect_top_fraction=%.3f",
-        shrunk_params,
-        float(threshold),
+        "Importance shrink applied: shrunk=%d params, protected=%d/%d weights "
+        "(%.1f%%), scope=%s, tied-skipped=%d, no-score-skipped=%d, "
+        "shrink_factor=%.3f, protect_top_fraction=%.3f",
+        len(to_shrink),
+        protected_elements,
+        total_elements,
+        100.0 * protected_elements / max(total_elements, 1),
+        threshold_scope,
         skipped_tied,
         skipped_no_fisher,
         shrink_factor,
@@ -115,14 +126,45 @@ def apply_fisher_protected_shrink(
 
 
 def _fisher_threshold(
-    fisher: Dict[str, Tensor], protect_top_fraction: float
-) -> Tensor:
-    """Quantile cutoff above which weights are protected from shrink."""
-    flat = torch.cat([f.flatten().float() for f in fisher.values()])
-    if protect_top_fraction <= 0.0:
-        # Shrink everything; threshold above max so nothing is protected.
-        return flat.max() + 1.0
-    if protect_top_fraction >= 1.0:
-        # Protect everything; threshold below min so all are protected.
-        return flat.min() - 1.0
-    return torch.quantile(flat, 1.0 - protect_top_fraction)
+    fisher: Dict[str, Tensor],
+    protect_top_fraction: float,
+    threshold_scope: str = "per_tensor",
+) -> Dict[str, Tensor]:
+    """Per-parameter cutoff at or above which weights are protected.
+
+    Always returns one cutoff per key so the consumer never has to branch.
+
+    ``"per_tensor"`` takes a separate quantile inside each parameter tensor.
+    This is the safe default: importance magnitudes are not comparable across
+    tensors, so a single pooled quantile makes "top 20%" mean "top 20% of
+    whichever tensor happens to carry the largest raw values" rather than
+    top 20% of each. It does mean protection is allocated per layer, which is
+    a departure from SHY's global renormalization — hence the escape hatch.
+
+    ``"global"`` reproduces the pooled behaviour: one quantile over every
+    score, broadcast to all keys.
+    """
+    if threshold_scope not in ("per_tensor", "global"):
+        raise ValueError(
+            "threshold_scope must be 'per_tensor' or 'global', got "
+            f"{threshold_scope!r}"
+        )
+
+    def cutoff(values: Tensor) -> Tensor:
+        if protect_top_fraction <= 0.0:
+            # Shrink everything; cutoff above max so nothing is protected.
+            return values.max() + 1.0
+        if protect_top_fraction >= 1.0:
+            # Protect everything; cutoff below min so all are protected.
+            return values.min() - 1.0
+        return torch.quantile(values, 1.0 - protect_top_fraction)
+
+    if threshold_scope == "global":
+        flat = torch.cat([f.flatten().float() for f in fisher.values()])
+        shared = cutoff(flat)
+        return {name: shared for name in fisher}
+
+    return {
+        name: cutoff(tensor.flatten().float())
+        for name, tensor in fisher.items()
+    }

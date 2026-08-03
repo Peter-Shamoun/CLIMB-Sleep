@@ -900,5 +900,6 @@ class CustomTrainer(Trainer):
             module=unwrap_model(self.model),
             shrink_factor=cfg.shrink_factor,
             protect_top_fraction=cfg.protect_top_fraction,
+            threshold_scope=cfg.threshold_scope,
         )
         self.fisher_diagonal = None

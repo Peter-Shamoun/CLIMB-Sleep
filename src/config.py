@@ -94,14 +94,15 @@ class TrainerParams(DictConfig):
 # @dataclass
 # class TaskParams(DictConfig):
 
+
 @dataclass
 class TaskParams(DictConfig):
     # Sets learning objective and task
     # steps: Dict[str, List[float]] # No need, one task throughout
-    
+
     # Task: either mlm or clm
     task: str
-    
+
     # parameters for the task head architecture
     task_head_params: Optional[Dict[str, Any]] = field(default_factory=dict)
 
@@ -128,6 +129,7 @@ class PacingFunctionParams(Mapping[str, Any]):
     # end of the curriculum
     max_difficulty: Optional[float] = 1.0
 
+
 # Difficulty Scorer Parameters
 
 DifficultyScorerKwargsType = Optional[Dict[str, Any]]
@@ -142,8 +144,14 @@ class PlasticityDecayParams(DictConfig):
     decay_type: str = "fisher_protected_shrink"
     # Multiplicative factor applied to non-protected weights after each sleep phase.
     shrink_factor: float = 0.95
-    # Fraction of weights protected from shrink (ranked by empirical Fisher diagonal).
+    # Fraction of weights protected from shrink (ranked by importance score).
     protect_top_fraction: float = 0.20
+    # How the protect cutoff is computed.
+    #   "per_tensor" — one quantile per parameter tensor. Correct when score
+    #     magnitudes differ across tensors, but imposes per-layer homeostasis.
+    #   "global" — one quantile over all scores pooled. Matches SHY's global
+    #     renormalization, but lets the largest-magnitude tensor dominate.
+    threshold_scope: str = "per_tensor"
 
 
 # Sleep mechanism params
