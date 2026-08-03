@@ -259,6 +259,80 @@ def test_aliased_storage_is_shrunk_once():
         ), f"{name} was shrunk twice through an aliased storage"
 
 
+# --- 4. sign semantics of the Taylor saliency ---
+
+
+def taylor_scores(weights, grads, signal):
+    """Mirror of CustomTrainer._finalize_taylor_saliency's scoring rule.
+
+    Kept here as an executable statement of the convention: whatever the
+    signal, a HIGHER stored score must mean "more worth protecting".
+    """
+    saliency = weights * grads
+    if signal == "taylor_signed":
+        return -saliency
+    return saliency.abs()
+
+
+def test_signed_taylor_protects_weights_whose_shrink_would_raise_loss():
+    """Shrinking w by (1 - f) moves the loss by about -(1 - f) * w * grad.
+    So a negative w*grad means shrinking hurts -> protect. A positive w*grad
+    means shrinking helps -> shrink freely."""
+    weights = torch.tensor([1.0, 1.0, 1.0, 1.0])
+    # products: -5 (shrink hurts most), -1, +1, +5 (shrink helps most)
+    grads = torch.tensor([-5.0, -1.0, 1.0, 5.0])
+
+    scores = taylor_scores(weights, grads, "taylor_signed")
+
+    # Highest score must be the most-negative product.
+    assert int(scores.argmax()) == 0
+    # And protecting the top 25% must select exactly that weight.
+    model = nn.Linear(4, 1, bias=False)
+    with torch.no_grad():
+        model.weight.copy_(weights.reshape(1, 4))
+    before = model.weight.detach().clone()
+    apply_fisher_protected_shrink(
+        fisher={"weight": scores.reshape(1, 4)},
+        module=model,
+        shrink_factor=SHRINK,
+        protect_top_fraction=0.25,
+        threshold_scope="per_tensor",
+    )
+    assert torch.isclose(
+        model.weight[0, 0], before[0, 0]
+    ), "the weight whose shrink would raise the loss was not protected"
+    assert torch.isclose(model.weight[0, 3], before[0, 3] * SHRINK)
+
+
+def test_abs_taylor_protects_largest_magnitude_product():
+    """Molchanov's criterion ignores direction, so the +5 product ties with
+    the -5 one and both outrank the small products."""
+    weights = torch.tensor([1.0, 1.0, 1.0, 1.0])
+    grads = torch.tensor([-5.0, -1.0, 1.0, 5.0])
+
+    scores = taylor_scores(weights, grads, "taylor_abs")
+
+    assert torch.allclose(scores, torch.tensor([5.0, 1.0, 1.0, 5.0]))
+    # The two conventions disagree: signed ranks index 3 last, abs ranks it
+    # joint-first. This is exactly the arm the falsification plan compares.
+    signed = taylor_scores(weights, grads, "taylor_signed")
+    assert int(signed.argmin()) == 3
+    assert int(scores.argmax()) in (0, 3)
+
+
+def test_zero_gradient_weights_are_never_protected_by_either_signal():
+    """A weight with no gradient has no first-order effect either way, so it
+    must not outrank a weight that actually matters."""
+    weights = torch.tensor([1.0, 1.0, 1.0])
+    grads = torch.tensor([-4.0, 0.0, 4.0])
+
+    signed = taylor_scores(weights, grads, "taylor_signed")
+    absolute = taylor_scores(weights, grads, "taylor_abs")
+
+    assert signed[1] < signed[0]
+    assert absolute[1] < absolute[0]
+
+
 # --- 6. per_sample_grads key and shape contract ---
 
 

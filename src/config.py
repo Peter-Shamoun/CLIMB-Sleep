@@ -142,6 +142,20 @@ class PlasticityDecayParams(DictConfig):
     enabled: bool = False
     # Only "fisher_protected_shrink" is implemented; kept as string for future variants.
     decay_type: str = "fisher_protected_shrink"
+    # Which importance score decides what is protected from shrink. In all
+    # cases a HIGHER score means "more worth protecting"; the sign handling
+    # that makes that true lives in CustomTrainer._finalize_fisher.
+    #   "fisher" — E[grad^2] accumulated across the wake phase. Correlational:
+    #     it measures how much a weight's gradient moved, not what shrinking
+    #     it would do. This is the incumbent and the control arm.
+    #   "taylor_signed" — first-order effect of the shrink itself, scored once
+    #     at the end-of-wake weights. Shrinking a weight by (1 - shrink_factor)
+    #     changes the loss by about -(1 - shrink_factor) * w * grad, so a
+    #     NEGATIVE w*grad means shrinking would raise the loss: protect it.
+    #   "taylor_abs" — magnitude |w * grad|, the criterion in Molchanov et al.
+    #     (arXiv 1611.06440). Preferred if the signed mean turns out to be
+    #     dominated by batch noise near a minimum.
+    importance_signal: str = "fisher"
     # Multiplicative factor applied to non-protected weights after each sleep phase.
     shrink_factor: float = 0.95
     # Fraction of weights protected from shrink (ranked by importance score).

@@ -1,0 +1,36 @@
+# Gain x Need utility replay + first-order Taylor shrink saliency.
+#
+# Identical to utility_with_decay.yaml except for importance_signal, so the two
+# form a head-to-head pair: same replay, same shrink schedule, different answer
+# to "which weights are worth protecting".
+#
+# Fisher (the control) asks how much a weight's gradient moved during wake.
+# Taylor asks what the shrink itself would do: multiplying a weight by 0.95
+# changes the loss by about -0.05 * w * grad, so a negative product means
+# shrinking would raise the loss and the weight should be spared.
+#
+# Set importance_signal to "taylor_abs" for the Molchanov (arXiv 1611.06440)
+# magnitude criterion, which is the third arm of the comparison.
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 5.0 # num eq. epochs - 1
+replay_ratio: 0.3
+replay_strategy: "utility"
+replay_decay_rate: 0.7
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+utility_temperature_gain: 1.0
+utility_temperature_need: 1.0
+need_knn_k: 50
+need_embedding_layers: 4
+
+plasticity_decay:
+  enabled: true
+  decay_type: "fisher_protected_shrink"
+  importance_signal: "taylor_signed"
+  shrink_factor: 0.95
+  protect_top_fraction: 0.20
+  threshold_scope: "per_tensor"
