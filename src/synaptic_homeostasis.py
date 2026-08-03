@@ -28,6 +28,44 @@ from torch.nn import Module
 logger = logging.getLogger(__name__)
 
 
+def taylor_saliency(
+    weight: Tensor, per_sample_grad: Tensor, signal: str
+) -> Tensor:
+    """Protection priority from a first-order Taylor expansion of the shrink.
+
+    Multiplying a weight by ``shrink_factor`` moves the loss by about
+    ``-(1 - shrink_factor) * w * grad``. So a NEGATIVE ``w * grad`` means
+    shrinking would raise the loss, and that weight is the one worth sparing.
+
+    Returns a score where HIGHER always means "more worth protecting",
+    matching the convention ``apply_fisher_protected_shrink`` consumes:
+
+    * ``taylor_signed`` negates the product, so the most-negative ``w * grad``
+      sorts to the top.
+    * ``taylor_abs`` takes the magnitude, the criterion in Molchanov et al.
+      (arXiv 1611.06440), which ignores direction.
+
+    Lives here rather than inline in the trainer so it is testable without
+    constructing a Trainer. Getting this sign backwards is silent -- an
+    inverted signal produces a plausible negative result, not a crash -- so it
+    needs direct test coverage.
+
+    Args:
+        weight: the parameter, shape ``[*param_shape]``.
+        per_sample_grad: gradients, shape ``[batch, *param_shape]``.
+        signal: ``"taylor_signed"`` or ``"taylor_abs"``.
+    """
+    if signal not in ("taylor_signed", "taylor_abs"):
+        raise ValueError(
+            f"signal must be 'taylor_signed' or 'taylor_abs', got {signal!r}"
+        )
+    saliency = (weight.unsqueeze(0) * per_sample_grad).mean(dim=0).detach()
+    if signal == "taylor_signed":
+        # No clamp: zeroing the negatives would collapse the quantile cutoff.
+        return -saliency
+    return saliency.abs()
+
+
 def apply_fisher_protected_shrink(
     fisher: Dict[str, Tensor],
     module: Module,
@@ -103,7 +141,15 @@ def apply_fisher_protected_shrink(
     total_elements = 0
     with torch.no_grad():
         for name, param in to_shrink:
-            protect = fisher[name] >= threshold[name]
+            # `> 0`, not just `>= threshold`. A score of exactly zero means
+            # the weight had no gradient on the scoring batch -- no evidence
+            # it matters -- and must not be protected. Not hypothetical:
+            # embedding rows for tokens absent from the batch, and position
+            # rows beyond max_seq_length, are structurally zero. When they
+            # outnumber protect_top_fraction the quantile itself lands on 0.0
+            # and a bare `>= 0.0` protects the entire tensor, silently
+            # exempting millions of parameters from the mechanism.
+            protect = (fisher[name] >= threshold[name]) & (fisher[name] > 0)
             param.data = torch.where(
                 protect, param.data, param.data * shrink_factor
             )
@@ -123,6 +169,21 @@ def apply_fisher_protected_shrink(
         shrink_factor,
         protect_top_fraction,
     )
+    achieved = protected_elements / max(total_elements, 1)
+    if protect_top_fraction > 0 and achieved < 0.5 * protect_top_fraction:
+        # Expected when most scores are exactly zero (few distinct tokens in
+        # the scoring batch, sequences shorter than the position table).
+        # Surfaced because it means the shrink is running closer to
+        # "shrink everything" than the config asks for.
+        logger.warning(
+            "Only %.1f%% of weights protected against a requested %.1f%%; "
+            "%d/%d scores were exactly zero (no gradient on the scoring "
+            "batch) and are therefore ineligible for protection.",
+            100.0 * achieved,
+            100.0 * protect_top_fraction,
+            sum(int((fisher[n] == 0).sum()) for n, _ in to_shrink),
+            total_elements,
+        )
 
 
 def _fisher_threshold(

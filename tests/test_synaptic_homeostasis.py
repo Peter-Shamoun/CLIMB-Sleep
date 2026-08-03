@@ -17,7 +17,10 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.synaptic_homeostasis import apply_fisher_protected_shrink
+from src.synaptic_homeostasis import (
+    apply_fisher_protected_shrink,
+    taylor_saliency,
+)
 from src.utils.per_sample_grad import per_sample_grads
 
 SHRINK = 0.95
@@ -263,15 +266,14 @@ def test_aliased_storage_is_shrunk_once():
 
 
 def taylor_scores(weights, grads, signal):
-    """Mirror of CustomTrainer._finalize_taylor_saliency's scoring rule.
+    """Call the REAL scoring function with a batch of one.
 
-    Kept here as an executable statement of the convention: whatever the
-    signal, a HIGHER stored score must mean "more worth protecting".
+    Deliberately not a reimplementation: an earlier version of this file
+    mirrored the production rule locally, which meant flipping the sign in
+    the trainer left every test green. taylor_saliency is imported from
+    src.synaptic_homeostasis so these tests fail if the convention changes.
     """
-    saliency = weights * grads
-    if signal == "taylor_signed":
-        return -saliency
-    return saliency.abs()
+    return taylor_saliency(weights, grads.unsqueeze(0), signal)
 
 
 def test_signed_taylor_protects_weights_whose_shrink_would_raise_loss():
@@ -331,6 +333,139 @@ def test_zero_gradient_weights_are_never_protected_by_either_signal():
 
     assert signed[1] < signed[0]
     assert absolute[1] < absolute[0]
+
+
+# --- zero-score weights must never be protected ---
+
+
+def test_unseen_embedding_rows_are_not_protected():
+    """The failure that motivated the `> 0` guard.
+
+    Embedding rows for tokens absent from the scoring batch have exactly zero
+    gradient. When they outnumber protect_top_fraction the quantile lands on
+    0.0, and a bare `>= threshold` protects the whole tensor -- silently
+    exempting millions of parameters from the shrink.
+    """
+    vocab, hidden = 512, 8
+    embed = nn.Embedding(vocab, hidden)
+    before = embed.weight.detach().clone()
+
+    scores = torch.zeros(vocab, hidden)
+    seen = torch.arange(50)  # only 50 of 512 rows have any gradient
+    scores[seen] = torch.rand(len(seen), hidden) + 0.1
+
+    apply_fisher_protected_shrink(
+        fisher={"weight": scores},
+        module=embed,
+        shrink_factor=SHRINK,
+        protect_top_fraction=0.20,
+    )
+
+    unseen = embed.weight.data[50:]
+    assert torch.allclose(
+        unseen, before[50:] * SHRINK
+    ), "rows with no gradient were protected; the quantile landed on zero"
+    protected = torch.isclose(embed.weight.data, before).float().mean().item()
+    assert protected < 0.20, (
+        f"{protected:.1%} protected against a 20% budget -- zero-score "
+        "weights are being counted as important"
+    )
+
+
+def test_zero_scores_ineligible_for_every_signal():
+    for scores, label in (
+        (torch.tensor([[0.0, 0.0, 0.0, 5.0]]), "mostly zero"),
+        (torch.tensor([[-3.0, 0.0, -1.0, 2.0]]), "signed with zero"),
+    ):
+        model = nn.Linear(4, 1, bias=False)
+        before = model.weight.detach().clone()
+        apply_fisher_protected_shrink(
+            fisher={"weight": scores},
+            module=model,
+            shrink_factor=SHRINK,
+            protect_top_fraction=0.75,
+        )
+        untouched = torch.isclose(model.weight.data, before)[0]
+        assert not untouched[1], f"{label}: a zero score was protected"
+
+
+# --- frozen parameters are excluded on both sides ---
+
+
+def test_frozen_parameters_are_left_alone():
+    model = ToyLM()
+    model.dense.weight.requires_grad_(False)
+    before = {n: p.detach().clone() for n, p in model.named_parameters()}
+
+    apply_fisher_protected_shrink(
+        fisher={n: torch.ones_like(p) for n, p in model.named_parameters()},
+        module=model,
+        shrink_factor=SHRINK,
+        protect_top_fraction=0.0,
+    )
+
+    assert torch.equal(
+        model.dense.weight.data, before["dense.weight"]
+    ), "a requires_grad=False parameter was shrunk"
+    assert torch.allclose(
+        model.embed.weight.data, before["embed.weight"] * SHRINK
+    )
+
+
+# --- partial key drift must not fail silently ---
+
+
+def test_partial_key_mismatch_is_reported():
+    """Total mismatch raises. A PARTIAL mismatch -- one submodule renamed --
+    previously skipped those tensors with only a counter to show for it."""
+    model = ToyLM()
+    scores = uniform_scores(model)
+    scores["renamed.embed.weight"] = scores.pop("embed.weight")
+    before = model.embed.weight.detach().clone()
+
+    apply_fisher_protected_shrink(
+        fisher=scores,
+        module=model,
+        shrink_factor=SHRINK,
+        protect_top_fraction=0.0,
+    )
+
+    # Documents current behaviour: the drifted tensor is silently untouched.
+    assert torch.equal(model.embed.weight.data, before), (
+        "behaviour changed -- update this test and decide whether partial "
+        "key drift should now raise"
+    )
+
+
+# --- producer -> consumer, no key translation ---
+
+
+def test_per_sample_grads_output_feeds_shrink_directly():
+    """The shape the original bug actually took: real grads from the producer
+    handed straight to the consumer. Every other test hand-builds the score
+    dict from named_parameters(), which assumes the convention that broke."""
+    torch.manual_seed(0)
+    model = ToyLM()
+    input_ids = torch.randint(0, 16, (4, 6))
+    attention_mask = torch.ones(4, 6)
+    labels = torch.randint(0, 16, (4, 6))
+
+    grads = per_sample_grads(model, input_ids, attention_mask, labels, "mlm")
+    scores = {k: (g * g).mean(dim=0) for k, g in grads.items()}
+    before = {n: p.detach().clone() for n, p in model.named_parameters()}
+
+    apply_fisher_protected_shrink(
+        fisher=scores,  # no remapping of any kind
+        module=model,
+        shrink_factor=SHRINK,
+        protect_top_fraction=0.0,
+    )
+
+    for name, param in model.named_parameters():
+        assert not torch.allclose(param.data, before[name]), (
+            f"{name} unchanged -- producer and consumer key conventions have "
+            "drifted apart again"
+        )
 
 
 # --- 6. per_sample_grads key and shape contract ---

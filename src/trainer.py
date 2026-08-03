@@ -47,7 +47,10 @@ from src.data_curriculum.utility_scoring import compute_need_scores
 
 # Model Loading
 from src.models import load_base_model
-from src.synaptic_homeostasis import apply_fisher_protected_shrink
+from src.synaptic_homeostasis import (
+    apply_fisher_protected_shrink,
+    taylor_saliency,
+)
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
 from src.utils.per_sample_grad import (
@@ -955,19 +958,11 @@ class CustomTrainer(Trainer):
                 model.train()
 
         signal = self.sleep_mechanism_cfg.plasticity_decay.importance_signal
-        scores = {}
-        for name, grad in grads_dict.items():
-            if name not in weights:
-                continue
-            # grad: [B, *param_shape]; average the per-sample products.
-            saliency = (weights[name].unsqueeze(0) * grad).mean(dim=0).detach()
-            if signal == "taylor_signed":
-                # Protect the most negative w*grad, so flip the sign to keep
-                # "higher = protect" true for the shared consumer. No clamp:
-                # zeroing the negatives would collapse the quantile cutoff.
-                scores[name] = -saliency
-            else:  # taylor_abs
-                scores[name] = saliency.abs()
+        scores = {
+            name: taylor_saliency(weights[name], grad, signal)
+            for name, grad in grads_dict.items()
+            if name in weights
+        }
 
         for name, score in scores.items():
             if not torch.isfinite(score).all():
