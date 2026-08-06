@@ -47,7 +47,10 @@ from src.data_curriculum.utility_scoring import compute_need_scores
 
 # Model Loading
 from src.models import load_base_model
-from src.synaptic_homeostasis import apply_fisher_protected_shrink
+from src.synaptic_homeostasis import (
+    apply_fisher_protected_shrink,
+    taylor_saliency,
+)
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
 from src.utils.per_sample_grad import (
@@ -131,10 +134,33 @@ class CustomTrainer(Trainer):
         # Fisher accumulator built during wake; finalized at WAKE->SLEEP.
         self.fisher_accumulator: Optional[Dict[str, torch.Tensor]] = None
         self.fisher_sample_count = 0
-        # Finalized empirical Fisher diagonal, consumed by SLEEP->WAKE shrink.
-        # Last cycle's Fisher is never consumed (no SLEEP->WAKE after the final
-        # WAKE->SLEEP); held memory is reclaimed at process exit.
+        # Finalized importance scores, consumed by the SLEEP->WAKE shrink.
+        # Last cycle's scores are never consumed (no SLEEP->WAKE after the
+        # final WAKE->SLEEP); held memory is reclaimed at process exit.
         self.fisher_diagonal: Optional[Dict[str, torch.Tensor]] = None
+
+        # The Taylor signals replace the wake-trajectory accumulation with a
+        # single scoring pass at the end-of-wake weights, so they need the last
+        # wake batch kept around; see _finalize_taylor_saliency.
+        self._importance_signal = (
+            self.sleep_mechanism_cfg.plasticity_decay.importance_signal
+            if self._plasticity_decay_enabled
+            else "fisher"
+        )
+        if self._importance_signal not in (
+            "fisher",
+            "taylor_signed",
+            "taylor_abs",
+        ):
+            raise ValueError(
+                "plasticity_decay.importance_signal must be one of 'fisher', "
+                "'taylor_signed', 'taylor_abs'; got "
+                f"{self._importance_signal!r}"
+            )
+        self._taylor_signal_enabled = self._plasticity_decay_enabled and (
+            self._importance_signal != "fisher"
+        )
+        self._last_wake_batch: Optional[Dict[str, torch.Tensor]] = None
 
         self.phase_steps = 0
 
@@ -361,9 +387,15 @@ class CustomTrainer(Trainer):
             # Per-sample squared gradient norms (Gain) for Gain x Need replay
             # AND/OR online empirical Fisher accumulation for plasticity decay.
             # One torch.func.vmap pass produces grads consumed by both methods.
+            # The Taylor signals score once at the phase boundary, so they do
+            # NOT need the per-sample grads on every wake step -- that would be
+            # a full vmap pass per step thrown away.
             need_per_sample_grads = (
                 self.sleep_mechanism_cfg.replay_criteria == "utility"
-                or self._plasticity_decay_enabled
+                or (
+                    self._plasticity_decay_enabled
+                    and not self._taylor_signal_enabled
+                )
             )
             if need_per_sample_grads:
                 grads_dict = per_sample_grads(
@@ -371,29 +403,43 @@ class CustomTrainer(Trainer):
                     input_ids,
                     inputs["attention_mask"],
                     labels,
-                    self.task_name
-                )   
-                if self._plasticity_decay_enabled:
+                    self.task_name,
+                )
+                if (
+                    self._plasticity_decay_enabled
+                    and not self._taylor_signal_enabled
+                ):
                     self._accumulate_fisher(grads_dict)
-                    
+
+            if self._taylor_signal_enabled:
+                # The Taylor signals are scored once, at the end-of-wake
+                # weights, rather than accumulated along the wake trajectory.
+                # _finalize_fisher runs at the phase boundary where no batch is
+                # in scope, so keep the most recent one. Detached and kept on
+                # device; one batch, so the memory cost is negligible.
+                self._last_wake_batch = {
+                    "input_ids": input_ids.detach(),
+                    "attention_mask": inputs["attention_mask"].detach(),
+                    "labels": labels.detach(),
+                }
+
             # Per-sample replay score for replay buffer tracking.
             per_sample_score = None
-            if self.sleep_mechanism_cfg.replay_criteria == 'loss':
+            if self.sleep_mechanism_cfg.replay_criteria == "loss":
                 # Score = cross entropy loss
                 per_sample_score = cross_entropy(
                     logits, labels, reduction="none", **(loss_kwargs or {})
                 )
                 # Ignore non-masked tokens; same as avg. score if task is "clm"
                 mask = (labels != -100).float()
-                per_sample_score = (per_sample_score * mask).sum(dim=-1) / mask.sum(
+                per_sample_score = (per_sample_score * mask).sum(
                     dim=-1
-                ).clamp(min=1)
-            elif self.sleep_mechanism_cfg.replay_criteria == 'utility':
+                ) / mask.sum(dim=-1).clamp(min=1)
+            elif self.sleep_mechanism_cfg.replay_criteria == "utility":
                 # Score = Utility = gain * need
                 # During wake phase, scores are stored as just gain
                 # Need scores are calculated at the end of each wake phase
                 per_sample_score = per_sample_squared_grad_norms(grads_dict)
-                
 
             # Add per-sample loss (and Gain when computed) to sampler
             if "indices" in inputs:
@@ -410,7 +456,9 @@ class CustomTrainer(Trainer):
         loss_metrics[f"loss_{self.task_name}"] = total_unit_loss_scalar
         if self.sleep_mechanism_cfg:
             curr_phase = self.callback_handler.train_dataloader.sampler.phase
-            loss_metrics[f"loss_{self.task_name}_{curr_phase}"] = total_unit_loss_scalar
+            loss_metrics[f"loss_{self.task_name}_{curr_phase}"] = (
+                total_unit_loss_scalar
+            )
 
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
@@ -446,7 +494,7 @@ class CustomTrainer(Trainer):
                     )
                 next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
                 self._swap_phase(sampler, phase, next_phase)
-                
+
         return loss
 
     def evaluate(
@@ -593,7 +641,7 @@ class CustomTrainer(Trainer):
                 world_size=self.args.world_size,
                 dry_run=self.dry_run,
                 keep_predictions=is_best_run,
-                task="mlm" if self.task_name == "mlm" else "causal"
+                task="mlm" if self.task_name == "mlm" else "causal",
             )
             # Get average of blimp metrics
             babylm_metrics = babylm_evaluator()
@@ -763,6 +811,7 @@ class CustomTrainer(Trainer):
             self.fisher_diagonal = None
             self.fisher_accumulator = None
             self.fisher_sample_count = 0
+            self._last_wake_batch = None
 
     def _swap_phase(self, sampler: SleepSampler, phase: str, next_phase: str):
         logger.info("Ending %s phase...", phase)
@@ -795,7 +844,7 @@ class CustomTrainer(Trainer):
                 columns=self.sleep_table.columns, data=self.sleep_table.data
             )
             self.log({"sleep_table": _sleep_table})
-            
+
             # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
             if self._plasticity_decay_enabled:
                 self._apply_fisher_shrink()
@@ -865,13 +914,87 @@ class CustomTrainer(Trainer):
             self.fisher_accumulator[name].add_(s)
         self.fisher_sample_count += batch_size
 
+    def _finalize_taylor_saliency(self) -> None:
+        """Score first-order shrink saliency at the end-of-wake weights.
+
+        One per_sample_grads pass on the last wake batch, at the settled
+        weights, rather than an average over the moving wake trajectory. The
+        stored score is a protection priority: higher always means "protect".
+        For the signed variant that means negating w*grad, because it is the
+        most negative product -- where shrinking would raise the loss -- that
+        deserves protection.
+        """
+        if self._last_wake_batch is None:
+            logger.warning(
+                "Taylor saliency enabled but no wake batch was captured at "
+                "WAKE->SLEEP; leaving importance scores unset."
+            )
+            self.fisher_diagonal = None
+            return
+
+        model = unwrap_model(self.model)
+        was_training = model.training
+        # eval() for the measurement pass: per_sample_grads runs vmap with
+        # randomness="different", so dropout would give each sample its own
+        # mask and the signed products would partially cancel when summed.
+        # Fisher's squared terms are immune to this; a signed sum is not.
+        model.eval()
+        try:
+            with torch.no_grad():
+                weights = {
+                    name: param.detach().clone()
+                    for name, param in model.named_parameters()
+                    if param.requires_grad
+                }
+            grads_dict = per_sample_grads(
+                model,
+                self._last_wake_batch["input_ids"],
+                self._last_wake_batch["attention_mask"],
+                self._last_wake_batch["labels"],
+                self.task_name,
+            )
+        finally:
+            if was_training:
+                model.train()
+
+        signal = self.sleep_mechanism_cfg.plasticity_decay.importance_signal
+        scores = {
+            name: taylor_saliency(weights[name], grad, signal)
+            for name, grad in grads_dict.items()
+            if name in weights
+        }
+
+        for name, score in scores.items():
+            if not torch.isfinite(score).all():
+                logger.warning(
+                    "Non-finite Taylor saliency at param '%s'; skipping "
+                    "shrink this cycle rather than protecting a garbage set.",
+                    name,
+                )
+                self.fisher_diagonal = None
+                return
+
+        self.fisher_diagonal = scores
+        self._last_wake_batch = None
+        logger.info(
+            "Scored %s saliency at WAKE->SLEEP over %d params.",
+            signal,
+            len(scores),
+        )
+
     def _finalize_fisher(self) -> None:
         """Divide accumulated squared gradients by the sample count to get Fisher diagonal."""
+        if self._taylor_signal_enabled:
+            self._finalize_taylor_saliency()
+            return
         if self.fisher_accumulator is None or self.fisher_sample_count == 0:
             logger.warning(
                 "Plasticity decay enabled but Fisher accumulator empty at "
                 "WAKE->SLEEP; skipping finalization."
             )
+            # Do not leave last cycle's diagonal in place: it would be
+            # reapplied at the next SLEEP->WAKE as if freshly measured.
+            self.fisher_diagonal = None
             return
         count = self.fisher_sample_count
         self.fisher_diagonal = {
@@ -897,10 +1020,9 @@ class CustomTrainer(Trainer):
         cfg = self.sleep_mechanism_cfg.plasticity_decay
         apply_fisher_protected_shrink(
             fisher=self.fisher_diagonal,
-            modules={
-                "model": unwrap_model(self.model),
-            },
+            module=unwrap_model(self.model),
             shrink_factor=cfg.shrink_factor,
             protect_top_fraction=cfg.protect_top_fraction,
+            threshold_scope=cfg.threshold_scope,
         )
         self.fisher_diagonal = None
