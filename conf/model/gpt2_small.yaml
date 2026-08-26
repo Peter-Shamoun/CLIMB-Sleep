@@ -1,4 +1,4 @@
-name: 'roberta_pre_layer_norm_mlm'
+name: 'gpt2_clm'
 
 model_kwargs: {
   "num_hidden_layers": 8,

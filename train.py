@@ -1,4 +1,4 @@
-"""Train a RoBERTa model on the BabyLM dataset."""
+"""Train a sleep model on the BabyLM dataset."""
 
 import logging
 import os
@@ -205,14 +205,14 @@ def main(cfg: BabyLMConfig):
         logging_steps=logging_steps,
         run_name=cfg.experiment.name,
         report_to=["wandb"]
-        if not cfg.experiment.offline_run
-        else [],  # wandb deactivated for offline runs
+            if not cfg.experiment.offline_run
+            else [],  # wandb deactivated for offline runs
         save_strategy="steps",
         hub_strategy="every_save",
         push_to_hub=False,
         hub_model_id=None,
         hub_token=os.environ["HF_WRITE_TOKEN"],
-        dataloader_drop_last=(cfg.data_curriculum is not None or cfg.sleep_mechanism is not None),
+        dataloader_drop_last=(cfg.sleep_mechanism is not None),
         remove_unused_columns=False,
         load_best_model_at_end=True,
         metric_for_best_model="eval_perplexity_mean",

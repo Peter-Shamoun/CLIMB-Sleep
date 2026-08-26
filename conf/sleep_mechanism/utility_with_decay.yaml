@@ -20,5 +20,10 @@ need_embedding_layers: 4
 plasticity_decay:
   enabled: true
   decay_type: "fisher_protected_shrink"
+  # "fisher" | "taylor_signed" | "taylor_abs" -- see PlasticityDecayParams.
+  # This file is the Fisher control arm; taylor_with_decay.yaml is the
+  # head-to-head comparison arm.
+  importance_signal: "fisher"
   shrink_factor: 0.95
   protect_top_fraction: 0.20
+  threshold_scope: "per_tensor"

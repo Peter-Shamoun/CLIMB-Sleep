@@ -33,44 +33,61 @@ def prepare_4d_mask(attention_mask, dtype):
 
 def per_sample_grads(
     model: Module,
-    mlm_head: Module,
     input_ids: Tensor,
     attention_mask: Tensor,
     labels: Tensor,
+    task: str,
 ) -> Dict[str, Tensor]:
-    """Per-sample gradients of the MLM loss w.r.t. trainable params.
+    """Per-sample gradients of the loss w.r.t. trainable params.
 
-    Returns a dict keyed by ``"model.<name>"`` or ``"mlm_head.<name>"``. Each
+    Returns a dict keyed by parameter name. Each
     value has shape ``[batch, *param_shape]``. Only ``requires_grad=True``
     parameters are included.
     """
     base_params = {
         k: v.detach() for k, v in model.named_parameters() if v.requires_grad
     }
-    head_params = {
-        k: v.detach()
-        for k, v in mlm_head.named_parameters()
-        if v.requires_grad
-    }
+    # head_params = {
+    #     k: v.detach()
+    #     for k, v in mlm_head.named_parameters()
+    #     if v.requires_grad
+    # }
     base_buffers = {k: v.detach() for k, v in model.named_buffers()}
-    head_buffers = {k: v.detach() for k, v in mlm_head.named_buffers()}
+    # head_buffers = {k: v.detach() for k, v in mlm_head.named_buffers()}
 
-    def loss_fn(base_p, head_p, base_b, head_b, x, attn, y):
+    def loss_fn(base_p,
+                # head_p,
+                base_b,
+                # head_b,
+                x, attn, y):
         x_b = x.unsqueeze(0)
         attn_b = attn.unsqueeze(0)
         y_b = y.unsqueeze(0)
-        base_out = functional_call(
+        # base_out = functional_call(
+        #     model,
+        #     (base_p, base_b),
+        #     args=(),
+        #     kwargs={"input_ids": x_b, "attention_mask": attn_b},
+        # )
+        # hidden = base_out[0]
+        # logits = functional_call(
+        #     mlm_head,
+        #     (head_p, head_b),
+        #     args=(hidden,),
+        # ).transpose(-1, -2)
+        logits = functional_call(
             model,
             (base_p, base_b),
             args=(),
             kwargs={"input_ids": x_b, "attention_mask": attn_b},
-        )
-        hidden = base_out[0]
-        logits = functional_call(
-            mlm_head,
-            (head_p, head_b),
-            args=(hidden,),
-        ).transpose(-1, -2)
+        )[0].transpose(-1, -2)
+        
+        # Have to offset logits for causal modeling - labels already adjusted
+        if task == "mlm": # leave support for other task-specific transforms
+            pass
+        elif task == "clm":
+            logits = logits[:, :, :-1].contiguous()
+            
         # Mean over unmasked positions with clamp(min=1). All-(-100) samples
         # would otherwise produce 0/0 = NaN here, propagating into the
         # per-sample gradient and contaminating Gain + Fisher.
@@ -81,12 +98,13 @@ def per_sample_grads(
     dtype = next(model.parameters()).dtype
     attention_mask_4d = prepare_4d_mask(attention_mask, dtype)
     
-    grad_fn = grad(loss_fn, argnums=(0, 1))
+    grad_fn = grad(loss_fn, argnums=0)
     # randomness='different' so dropout (or any RNG op) gets an independent mask per
     # sample inside vmap, matching what a regular batched forward would produce.
     per_sample = vmap(
         grad_fn,
-        in_dims=(None, None, None, None, 0, 0, 0),
+        # in_dims=(None, None, None, None, 0, 0, 0),
+        in_dims=(None, None, 0, 0, 0),
         randomness="different",
     )
     # base_grads, head_grads = per_sample(
@@ -99,30 +117,27 @@ def per_sample_grads(
     #     labels,
     # )
     chunk_base_grads = []
-    chunk_head_grads = []
+    # chunk_head_grads = []
     batch_size = input_ids.shape[0]
     chunk_size = 8 # TODO: make this a config parameter somehow
 
     for start in range(0, batch_size, chunk_size):
-        bg, hg = per_sample(
-            base_params, head_params, base_buffers, head_buffers,
+        bg = per_sample(
+            base_params,
+            # head_params,
+            base_buffers,
+            # head_buffers,
             input_ids[start:start+chunk_size],
             attention_mask_4d[start:start+chunk_size],
             labels[start:start+chunk_size],
         )
         chunk_base_grads.append(bg)
-        chunk_head_grads.append(hg)
+        # chunk_head_grads.append(hg)
 
     # bg and hg are dicts of {param_name: [chunk_size, *param_shape]}
     base_grads = {k: torch.cat([c[k] for c in chunk_base_grads], dim=0) for k in base_params}
-    head_grads  = {k: torch.cat([c[k] for c in chunk_head_grads],  dim=0) for k in head_params}
 
-    out: Dict[str, Tensor] = {}
-    for k, v in base_grads.items():
-        out[f"model.{k}"] = v
-    for k, v in head_grads.items():
-        out[f"mlm_head.{k}"] = v
-    return out
+    return base_grads
 
 
 def per_sample_squared_grad_norms(grads: Dict[str, Tensor]) -> Tensor:

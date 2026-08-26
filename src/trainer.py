@@ -47,7 +47,10 @@ from src.data_curriculum.utility_scoring import compute_need_scores
 
 # Model Loading
 from src.models import load_base_model
-from src.synaptic_homeostasis import apply_fisher_protected_shrink
+from src.synaptic_homeostasis import (
+    apply_fisher_protected_shrink,
+    taylor_saliency,
+)
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
 from src.utils.per_sample_grad import (
@@ -112,6 +115,7 @@ class CustomTrainer(Trainer):
         self.eval_msgs = hydra_config.trainer.eval_msgs
         self.eval_perplexity = hydra_config.trainer.eval_perplexity
         self.sleep_table = sleep_table
+        self.task_name = hydra_config.task.task
 
         super().__init__(args=args, **kwargs)
 
@@ -130,14 +134,37 @@ class CustomTrainer(Trainer):
         # Fisher accumulator built during wake; finalized at WAKE->SLEEP.
         self.fisher_accumulator: Optional[Dict[str, torch.Tensor]] = None
         self.fisher_sample_count = 0
-        # Finalized empirical Fisher diagonal, consumed by SLEEP->WAKE shrink.
-        # Last cycle's Fisher is never consumed (no SLEEP->WAKE after the final
-        # WAKE->SLEEP); held memory is reclaimed at process exit.
+        # Finalized importance scores, consumed by the SLEEP->WAKE shrink.
+        # Last cycle's scores are never consumed (no SLEEP->WAKE after the
+        # final WAKE->SLEEP); held memory is reclaimed at process exit.
         self.fisher_diagonal: Optional[Dict[str, torch.Tensor]] = None
+
+        # The Taylor signals replace the wake-trajectory accumulation with a
+        # single scoring pass at the end-of-wake weights, so they need the last
+        # wake batch kept around; see _finalize_taylor_saliency.
+        self._importance_signal = (
+            self.sleep_mechanism_cfg.plasticity_decay.importance_signal
+            if self._plasticity_decay_enabled
+            else "fisher"
+        )
+        if self._importance_signal not in (
+            "fisher",
+            "taylor_signed",
+            "taylor_abs",
+        ):
+            raise ValueError(
+                "plasticity_decay.importance_signal must be one of 'fisher', "
+                "'taylor_signed', 'taylor_abs'; got "
+                f"{self._importance_signal!r}"
+            )
+        self._taylor_signal_enabled = self._plasticity_decay_enabled and (
+            self._importance_signal != "fisher"
+        )
+        self._last_wake_batch: Optional[Dict[str, torch.Tensor]] = None
 
         self.phase_steps = 0
 
-        # NOTE: The hidden dimension of the base model (is the input dimension to the task head)
+        # NOTE: The hidden dimension of the base model is the input dimension to the task head
         # We check that this variable is set in the config file when loading the base model
 
         self.hidden_rep_size = hydra_config.model.model_kwargs["hidden_size"]
@@ -150,28 +177,6 @@ class CustomTrainer(Trainer):
 
         # track gradient steps for checkpointing
         self.global_step = 0
-
-        # Initialize MLM task head
-        mlm_head_config = RobertaConfig(
-            vocab_size=self.tokenizer.vocab_size,  # type: ignore
-            hidden_size=self.hidden_rep_size,
-        )
-
-        self.mlm_head = RobertaPreLayerNormLMHead(mlm_head_config).to(
-            self.args.device
-        )
-
-        # Setting up optimizer and scheduler for task head
-        self.mlm_optimizer = AdamW(
-            self.mlm_head.parameters(),
-            lr=1e-3,
-        )
-
-        self.mlm_scheduler = get_linear_schedule_with_warmup(
-            self.mlm_optimizer,
-            num_warmup_steps=args.warmup_steps,
-            num_training_steps=args.max_steps,
-        )
 
     def _get_train_sampler(self):
         """
@@ -319,6 +324,7 @@ class CustomTrainer(Trainer):
         override_labels=None,
         loss_kwargs=None,
         inference=False,
+        return_outputs=False,
         **kwargs,
     ):
         """
@@ -355,7 +361,7 @@ class CustomTrainer(Trainer):
             if override_input_ids is not None
             else inputs["input_ids"]
         )
-        base_model_outputs = model(
+        outputs = model(
             input_ids=input_ids,
             attention_mask=(
                 inputs["attention_mask"]
@@ -363,52 +369,77 @@ class CustomTrainer(Trainer):
                 else None
             ),
         )
-        base_model_hidden_states = base_model_outputs[0]
+        # base_model_hidden_states = outputs[0]
+        logits = outputs[0].transpose(-1, -2)
 
-        logits = self.mlm_head(base_model_hidden_states).transpose(-1, -2)
         labels = (
             override_labels
             if override_labels is not None
             else inputs["labels"]
         )
 
+        if self.task_name == "clm":
+            logits = logits[:, :, :-1].contiguous()
+            labels = labels[:, 1:].contiguous()
+
         # Compute the loss
         if track_per_sample:
             # Per-sample squared gradient norms (Gain) for Gain x Need replay
             # AND/OR online empirical Fisher accumulation for plasticity decay.
             # One torch.func.vmap pass produces grads consumed by both methods.
+            # The Taylor signals score once at the phase boundary, so they do
+            # NOT need the per-sample grads on every wake step -- that would be
+            # a full vmap pass per step thrown away.
             need_per_sample_grads = (
                 self.sleep_mechanism_cfg.replay_criteria == "utility"
-                or self._plasticity_decay_enabled
+                or (
+                    self._plasticity_decay_enabled
+                    and not self._taylor_signal_enabled
+                )
             )
             if need_per_sample_grads:
                 grads_dict = per_sample_grads(
                     unwrap_model(model),
-                    self.mlm_head,
                     input_ids,
                     inputs["attention_mask"],
                     labels,
-                )   
-                if self._plasticity_decay_enabled:
+                    self.task_name,
+                )
+                if (
+                    self._plasticity_decay_enabled
+                    and not self._taylor_signal_enabled
+                ):
                     self._accumulate_fisher(grads_dict)
-                    
+
+            if self._taylor_signal_enabled:
+                # The Taylor signals are scored once, at the end-of-wake
+                # weights, rather than accumulated along the wake trajectory.
+                # _finalize_fisher runs at the phase boundary where no batch is
+                # in scope, so keep the most recent one. Detached and kept on
+                # device; one batch, so the memory cost is negligible.
+                self._last_wake_batch = {
+                    "input_ids": input_ids.detach(),
+                    "attention_mask": inputs["attention_mask"].detach(),
+                    "labels": labels.detach(),
+                }
+
             # Per-sample replay score for replay buffer tracking.
             per_sample_score = None
-            if self.sleep_mechanism_cfg.replay_criteria == 'loss':
+            if self.sleep_mechanism_cfg.replay_criteria == "loss":
                 # Score = cross entropy loss
                 per_sample_score = cross_entropy(
                     logits, labels, reduction="none", **(loss_kwargs or {})
                 )
+                # Ignore non-masked tokens; same as avg. score if task is "clm"
                 mask = (labels != -100).float()
-                per_sample_score = (per_sample_score * mask).sum(dim=-1) / mask.sum(
+                per_sample_score = (per_sample_score * mask).sum(
                     dim=-1
-                ).clamp(min=1)
-            elif self.sleep_mechanism_cfg.replay_criteria == 'utility':
+                ) / mask.sum(dim=-1).clamp(min=1)
+            elif self.sleep_mechanism_cfg.replay_criteria == "utility":
                 # Score = Utility = gain * need
                 # During wake phase, scores are stored as just gain
                 # Need scores are calculated at the end of each wake phase
                 per_sample_score = per_sample_squared_grad_norms(grads_dict)
-                
 
             # Add per-sample loss (and Gain when computed) to sampler
             if "indices" in inputs:
@@ -422,10 +453,12 @@ class CustomTrainer(Trainer):
             return loss
         # averaging over the processes
         total_unit_loss_scalar = self._nested_gather(loss).mean().item()  # type: ignore
-        loss_metrics["loss_mlm"] = total_unit_loss_scalar
+        loss_metrics[f"loss_{self.task_name}"] = total_unit_loss_scalar
         if self.sleep_mechanism_cfg:
             curr_phase = self.callback_handler.train_dataloader.sampler.phase
-            loss_metrics[f"loss_mlm_{curr_phase}"] = total_unit_loss_scalar
+            loss_metrics[f"loss_{self.task_name}_{curr_phase}"] = (
+                total_unit_loss_scalar
+            )
 
         # increment step after each loss computation
         # compute_loss() runs once per batch during training (right when model does gradient update)
@@ -439,7 +472,7 @@ class CustomTrainer(Trainer):
         ):
 
             self.log(loss_metrics)
-        return loss
+        return (loss, outputs) if return_outputs else loss
 
     def training_step(self, model, inputs, *args):
         loss = super().training_step(model, inputs)
@@ -461,11 +494,6 @@ class CustomTrainer(Trainer):
                     )
                 next_phase = "SLEEP" if phase == "WAKE" else "WAKE"
                 self._swap_phase(sampler, phase, next_phase)
-
-        # Train task head
-        self.mlm_optimizer.step()
-        self.mlm_scheduler.step()
-        self.mlm_head.zero_grad()
 
         return loss
 
@@ -613,6 +641,7 @@ class CustomTrainer(Trainer):
                 world_size=self.args.world_size,
                 dry_run=self.dry_run,
                 keep_predictions=is_best_run,
+                task="mlm" if self.task_name == "mlm" else "causal",
             )
             # Get average of blimp metrics
             babylm_metrics = babylm_evaluator()
@@ -669,22 +698,20 @@ class CustomTrainer(Trainer):
 
     def _initialize_full_lm_model(self):
         """
-        Initialize a full language model that includes the base model and the mlm head.
+        Initialize a full language model that includes the base model and the task head.
         """
 
-        # copy hydra config and change base_model to include mlm head
+        # copy hydra config and change base_model to include task head
         lm_config = copy.deepcopy(self.hydra_config)
-        lm_config.model.name = lm_config.model.name + "_mlm"
 
         lm_model = load_base_model(lm_config)
 
-        # unwrapping the base model and the mlm task head and copying that over into the lm model
+        # unwrapping the base model and the task head and copying that over into the lm model
         setattr(
             lm_model,
             f"{lm_model.base_model_prefix}",
             unwrap_model(self.model.base_model),
         )
-        lm_model.lm_head = unwrap_model(self.mlm_head)
 
         return lm_model
 
@@ -699,7 +726,6 @@ class CustomTrainer(Trainer):
 
             # Saving should be done only on the main process
 
-            # NOTE: We need to save the objective mlm head state as well
             output_dir = (
                 output_dir if output_dir is not None else self.args.output_dir
             )
@@ -710,59 +736,19 @@ class CustomTrainer(Trainer):
             with open(step_file, "w") as f:
                 json.dump({"global_step": self.global_step}, f)
 
-            mlm_model_dir = os.path.join(output_dir, "lm_model")
-            task_heads_dir = os.path.join(output_dir, "task_heads")
-            os.makedirs(mlm_model_dir, exist_ok=True)
-            os.makedirs(task_heads_dir, exist_ok=True)
+            lm_model_dir = os.path.join(output_dir, "lm_model")
+            # task_heads_dir = os.path.join(output_dir, "task_heads")
+            os.makedirs(lm_model_dir, exist_ok=True)
+            # os.makedirs(task_heads_dir, exist_ok=True)
 
             # save the full language model + the associated tokenizer (for inference)
             lm_model = self._initialize_full_lm_model()
-            lm_model.save_pretrained(mlm_model_dir)
+            lm_model.save_pretrained(lm_model_dir)
 
-            self.tokenizer.save_pretrained(mlm_model_dir)
-
-            torch.save(
-                unwrap_model(self.mlm_head).state_dict(),
-                os.path.join(task_heads_dir, f"mlm_task_head.pt"),
-            )
-
-            torch.save(
-                self.mlm_optimizer.state_dict(),
-                os.path.join(task_heads_dir, f"mlm_optimizer.pt"),
-            )
-            torch.save(
-                self.mlm_scheduler.state_dict(),
-                os.path.join(task_heads_dir, f"mlm_scheduler.pt"),
-            )
+            self.tokenizer.save_pretrained(lm_model_dir)
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
         super()._load_from_checkpoint(resume_from_checkpoint, model=model)
-
-        task_head_dir = os.path.join(resume_from_checkpoint, "task_heads")
-        self.mlm_head.load_state_dict(
-            torch.load(
-                os.path.join(
-                    task_head_dir, f"{self.task_unit_name}_task_head.pt"
-                ),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_optimizer.load_state_dict(
-            torch.load(
-                os.path.join(
-                    task_head_dir, f"{self.task_unit_name}_optimizer.pt"
-                ),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_scheduler.load_state_dict(
-            torch.load(
-                os.path.join(
-                    task_head_dir, f"{self.task_unit_name}_scheduler.pt"
-                ),
-                map_location=self.args.device,
-            )
-        )
 
         # load step count
         step_file = os.path.join(resume_from_checkpoint, "trainer_state.json")
@@ -771,31 +757,6 @@ class CustomTrainer(Trainer):
             with open(step_file, "r") as f:
                 state = json.load(f)
                 self.global_step = state.get("global_step", 0)
-
-    def _load_best_model(self):
-        super()._load_best_model()
-
-        task_head_dir = os.path.join(
-            self.state.best_model_checkpoint, "task_heads"
-        )
-        self.mlm_head.load_state_dict(
-            torch.load(
-                os.path.join(task_head_dir, f"mlm_task_head.pt"),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_optimizer.load_state_dict(
-            torch.load(
-                os.path.join(task_head_dir, f"mlm_optimizer.pt"),
-                map_location=self.args.device,
-            )
-        )
-        self.mlm_scheduler.load_state_dict(
-            torch.load(
-                os.path.join(task_head_dir, f"mlm_scheduler.pt"),
-                map_location=self.args.device,
-            )
-        )
 
     def _wrap_model(self, model):
         if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
@@ -850,6 +811,7 @@ class CustomTrainer(Trainer):
             self.fisher_diagonal = None
             self.fisher_accumulator = None
             self.fisher_sample_count = 0
+            self._last_wake_batch = None
 
     def _swap_phase(self, sampler: SleepSampler, phase: str, next_phase: str):
         logger.info("Ending %s phase...", phase)
@@ -882,7 +844,7 @@ class CustomTrainer(Trainer):
                 columns=self.sleep_table.columns, data=self.sleep_table.data
             )
             self.log({"sleep_table": _sleep_table})
-            
+
             # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
             if self._plasticity_decay_enabled:
                 self._apply_fisher_shrink()
@@ -952,13 +914,87 @@ class CustomTrainer(Trainer):
             self.fisher_accumulator[name].add_(s)
         self.fisher_sample_count += batch_size
 
+    def _finalize_taylor_saliency(self) -> None:
+        """Score first-order shrink saliency at the end-of-wake weights.
+
+        One per_sample_grads pass on the last wake batch, at the settled
+        weights, rather than an average over the moving wake trajectory. The
+        stored score is a protection priority: higher always means "protect".
+        For the signed variant that means negating w*grad, because it is the
+        most negative product -- where shrinking would raise the loss -- that
+        deserves protection.
+        """
+        if self._last_wake_batch is None:
+            logger.warning(
+                "Taylor saliency enabled but no wake batch was captured at "
+                "WAKE->SLEEP; leaving importance scores unset."
+            )
+            self.fisher_diagonal = None
+            return
+
+        model = unwrap_model(self.model)
+        was_training = model.training
+        # eval() for the measurement pass: per_sample_grads runs vmap with
+        # randomness="different", so dropout would give each sample its own
+        # mask and the signed products would partially cancel when summed.
+        # Fisher's squared terms are immune to this; a signed sum is not.
+        model.eval()
+        try:
+            with torch.no_grad():
+                weights = {
+                    name: param.detach().clone()
+                    for name, param in model.named_parameters()
+                    if param.requires_grad
+                }
+            grads_dict = per_sample_grads(
+                model,
+                self._last_wake_batch["input_ids"],
+                self._last_wake_batch["attention_mask"],
+                self._last_wake_batch["labels"],
+                self.task_name,
+            )
+        finally:
+            if was_training:
+                model.train()
+
+        signal = self.sleep_mechanism_cfg.plasticity_decay.importance_signal
+        scores = {
+            name: taylor_saliency(weights[name], grad, signal)
+            for name, grad in grads_dict.items()
+            if name in weights
+        }
+
+        for name, score in scores.items():
+            if not torch.isfinite(score).all():
+                logger.warning(
+                    "Non-finite Taylor saliency at param '%s'; skipping "
+                    "shrink this cycle rather than protecting a garbage set.",
+                    name,
+                )
+                self.fisher_diagonal = None
+                return
+
+        self.fisher_diagonal = scores
+        self._last_wake_batch = None
+        logger.info(
+            "Scored %s saliency at WAKE->SLEEP over %d params.",
+            signal,
+            len(scores),
+        )
+
     def _finalize_fisher(self) -> None:
         """Divide accumulated squared gradients by the sample count to get Fisher diagonal."""
+        if self._taylor_signal_enabled:
+            self._finalize_taylor_saliency()
+            return
         if self.fisher_accumulator is None or self.fisher_sample_count == 0:
             logger.warning(
                 "Plasticity decay enabled but Fisher accumulator empty at "
                 "WAKE->SLEEP; skipping finalization."
             )
+            # Do not leave last cycle's diagonal in place: it would be
+            # reapplied at the next SLEEP->WAKE as if freshly measured.
+            self.fisher_diagonal = None
             return
         count = self.fisher_sample_count
         self.fisher_diagonal = {
@@ -984,11 +1020,9 @@ class CustomTrainer(Trainer):
         cfg = self.sleep_mechanism_cfg.plasticity_decay
         apply_fisher_protected_shrink(
             fisher=self.fisher_diagonal,
-            modules={
-                "model": unwrap_model(self.model),
-                "mlm_head": self.mlm_head,
-            },
+            module=unwrap_model(self.model),
             shrink_factor=cfg.shrink_factor,
             protect_top_fraction=cfg.protect_top_fraction,
+            threshold_scope=cfg.threshold_scope,
         )
         self.fisher_diagonal = None

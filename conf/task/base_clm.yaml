@@ -1,0 +1,7 @@
+task: "clm"
+task_head_params: {}
+optimizer_params: { 
+  "lr": 1e-3,
+}
+scheduler_params: {}
+optional_kwargs: {}

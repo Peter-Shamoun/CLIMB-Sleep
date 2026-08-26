@@ -1,0 +1,10 @@
+task: "mlm"
+task_head_params: {}
+optimizer_params: { 
+  "lr": 1e-3,
+}
+scheduler_params: {}
+optional_kwargs: { 
+  "mask_probability": 0.15,
+  "unmask_probability" : 0,
+}
