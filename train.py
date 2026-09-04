@@ -117,7 +117,8 @@ def main(cfg: BabyLMConfig):
         if int(os.environ.get("RANK", "0")) == 0:
             wandb.init(
                 entity=cfg.experiment.entity,
-                project=cfg.experiment.group,
+                project=cfg.experiment.project,
+                group=cfg.experiment.group,
                 name=cfg.experiment.name,
                 config=wandb.config,  # type: ignore
                 id=cfg.experiment.resume_run_id,

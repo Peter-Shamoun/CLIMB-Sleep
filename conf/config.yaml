@@ -18,7 +18,7 @@ model:
 experiment:
   seed: 42
   entity: "lemn-lab"
-  group: "sleep-consolidated-learning"
+  project: "sleep-consolidated-learning"
   name: "clm-test-run"
   output_dir: "/mnt/data"
 

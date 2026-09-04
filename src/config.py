@@ -16,9 +16,11 @@ class ExperimentParams(DictConfig):
     # Name of wandb entity experiment belongs to
     entity: str = MISSING
 
-    # Name of the group that the current experiment belongs to
-    # analogous to 'project' in wandb
-    group: str = MISSING
+    # Name of the wandb project that the current experimnet belongs to
+    project: str = MISSING
+    
+    # Name of the wandb group that the current experiment belongs to
+    group: str = None
 
     # whether to run a minimal version of the experiment
     dry_run: bool = False
