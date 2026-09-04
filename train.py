@@ -99,7 +99,7 @@ def main(cfg: BabyLMConfig):
         sleep_table = None
     else:
         # These environment variables get picked up by Trainer
-        os.environ["WANDB_PROJECT"] = cfg.experiment.group
+        os.environ["WANDB_PROJECT"] = cfg.experiment.project
         os.environ["WANDB_ENTITY"] = cfg.experiment.entity
         wandb.config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
@@ -186,7 +186,7 @@ def main(cfg: BabyLMConfig):
                      // (100 if cfg.experiment.dry_run else 1000))
     logging_steps = logging_steps if logging_steps > 1 else max_training_steps
     training_args = TrainingArguments(
-        output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
+        output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.project}/{cfg.experiment.name}",
         # overwrite_output_dir=False,
         do_train=True,
         do_eval=True,
