@@ -20,7 +20,7 @@ class ExperimentParams(DictConfig):
     project: str = MISSING
     
     # Name of the wandb group that the current experiment belongs to
-    group: str = None
+    group: Optional[str] = None
 
     # whether to run a minimal version of the experiment
     dry_run: bool = False
