@@ -83,6 +83,7 @@ spec:
                 - k8s-ravi-01.calit2.optiputer.net
                 - chi-dgx-node02.csuchico.edu
                 - fiona8-1.calit2.uci.edu
+                - nautilus-ext-gpu01.fullerton.edu
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
