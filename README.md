@@ -104,7 +104,7 @@ python run_sweep.py
 
 ### Synaptic Homeostasis (SH) Experiments
 
-SH multiplies every weight by `shrink_factor` after each sleep phase except the top `protect_top_fraction` ranked by an importance signal (`fisher`, `taylor_signed`, `taylor_abs`; see `src/config.py:PlasticityDecayParams`). It works under both tasks; the `sh_*` configs share one replay regime so the shrink is the only difference between arms.
+SH multiplies every weight by `shrink_factor` after each sleep phase except the top `protect_top_fraction` ranked by an importance signal (`fisher`, `taylor_signed`, `taylor_abs`; see `src/config.py:PlasticityDecayParams`). It works under both tasks; the `sh_*` configs share one replay regime so the shrink is the only difference between arms. That regime is the Sep 2026 rerun cell `loss / strict / replay_ratio 0.1` on `default.yaml` (swr 9, decay 0.0533, n_phases 50), so the `rply_expmt_base_clm_loss_strict_0.1_*` runs are extra no-SH controls.
 
 Smoke test (2 cycles x 100 wake + 100 sleep steps; fires scoring and shrink once each; works with `task=base_clm` or `task=base_mlm`):
 ```
@@ -119,7 +119,7 @@ python train.py sleep_mechanism=sh_taylor_signed sleep_mechanism.plasticity_deca
 python train.py sleep_mechanism=sh_fisher                                    # ~6x slower: per-sample grads every wake step
 ```
 
-Stage 1 grid (Taylor signals x shrink x protect x seeds) is in `scripts/sh_grid.yaml`; point `run_sweep.py` at it. Run `sh_off` with the same seeds as the control, then `sh_fisher` at the best stage-1 setting as stage 2.
+Multi-seed arm runs on Nautilus: `scripts/k8s/sh_arms_job.yaml` (one Job per arm, one completion index per seed, W&B group `sh-arms-clm`, run names `sh_expmt_base_clm_{arm}_{seed}`). Stage 1 grid (Taylor signals x shrink x protect x seeds) is in `scripts/sh_grid.yaml`; point `run_sweep.py` at it. Run `sh_off` with the same seeds as the control, then `sh_fisher` at the best stage-1 setting as stage 2.
 
 Every run logs wall-clock accounting to WandB: `time/wake_phase_sec`, `time/sleep_phase_sec`, `time/train_wall_sec`, and the SH overhead `time/per_sample_grad_sec`, `time/sh_score_sec`, `time/sh_shrink_sec`, `time/sh_total_sec`.
 

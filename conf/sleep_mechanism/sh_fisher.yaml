@@ -1,16 +1,14 @@
-# Synaptic homeostasis experiments: importance_signal = "fisher".
-# Protects weights with largest E[grad^2] accumulated over the wake phase. Needs per-sample grads on EVERY wake step (~6x slower); run as the control at the best Taylor setting.
-# Override the two SH knobs from the CLI, e.g.
-#   sleep_mechanism=sh_fisher sleep_mechanism.plasticity_decay.shrink_factor=0.9 \
-#   sleep_mechanism.plasticity_decay.protect_top_fraction=0.5
-# Control arm without SH: sleep_mechanism=sh_off.
+# Synaptic homeostasis experiments: empirical Fisher diagonal.
+# Replay regime identical to sh_off (see that file); only plasticity_decay
+# differs. Importance = E[(dL/dw)^2] accumulated over the wake phase;
+# protects the top 20% per tensor, shrinks the rest by 0.95 at SLEEP->WAKE.
 
 wake_block_steps: 9999999
-sleep_wake_ratio: 20.0 # num eq. epochs - 1
+sleep_wake_ratio: 9.0 # num eq. epochs - 1
 replay_ratio: 0.1
-replay_strategy: "weighted"
+replay_strategy: "strict"
 replay_criteria: "loss"
-replay_decay_rate: 0.1
+replay_decay_rate: 0.05334773969181028
 n_augmentations: 40
 n_phases: 50
 max_seq_length: 128

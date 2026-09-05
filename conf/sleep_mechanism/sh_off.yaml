@@ -1,14 +1,16 @@
 # Synaptic homeostasis experiments: CONTROL arm (SH off).
 # Same replay regime as sh_taylor_signed / sh_taylor_abs / sh_fisher so the
-# shrink is the only difference. Cell taken from the 8/25 rerun matrix:
-# loss criterion, weighted, ratio 0.1, decay 0.1, n_phases 50, swr 20.
+# shrink is the only difference. The regime is TQ's live rerun cell
+# (rply_expmt_base_clm_loss_strict_0.1_*, Sep 2026): default.yaml values
+# (swr 9, decay 0.0533, n_phases 50) with loss criterion, strict strategy,
+# replay_ratio 0.1, so his 10-seed runs double as extra no-SH controls.
 
 wake_block_steps: 9999999
-sleep_wake_ratio: 20.0 # num eq. epochs - 1
+sleep_wake_ratio: 9.0 # num eq. epochs - 1
 replay_ratio: 0.1
-replay_strategy: "weighted"
+replay_strategy: "strict"
 replay_criteria: "loss"
-replay_decay_rate: 0.1
+replay_decay_rate: 0.05334773969181028
 n_augmentations: 40
 n_phases: 50
 max_seq_length: 128
