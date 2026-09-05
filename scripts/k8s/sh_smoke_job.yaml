@@ -84,6 +84,7 @@ spec:
                 - chi-dgx-node02.csuchico.edu
                 - fiona8-1.calit2.uci.edu
                 - nautilus-ext-gpu01.fullerton.edu
+                - hcc-chase-shor-c4705.unl.edu
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
