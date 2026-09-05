@@ -1,0 +1,26 @@
+# Smoke test for synaptic homeostasis under CLM (or MLM): two cycles, short
+# sleep, Taylor signal, so the WAKE->SLEEP scoring pass and the SLEEP->WAKE
+# shrink both fire at least once. Pair with experiment.dry_run=true:
+#   python train.py sleep_mechanism=sh_smoke experiment.dry_run=true \
+#     trainer.max_training_steps=400 experiment.name=sh-clm-smoke
+# Success = log lines "Scored taylor_signed saliency at WAKE->SLEEP" and
+# "Importance shrink applied: shrunk=..." plus time/sh_* metrics on WandB.
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 1.0
+replay_ratio: 0.1
+replay_strategy: "weighted"
+replay_criteria: "loss"
+replay_decay_rate: 0.1
+n_augmentations: 4
+n_phases: 2
+max_seq_length: 128
+contextualize_sleep: True
+
+plasticity_decay:
+  enabled: true
+  decay_type: "fisher_protected_shrink"
+  importance_signal: "taylor_signed"
+  shrink_factor: 0.95
+  protect_top_fraction: 0.20
+  threshold_scope: "per_tensor"

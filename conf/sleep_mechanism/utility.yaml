@@ -1,12 +1,20 @@
-# Gain x Need utility-based replay selection.
-# Per-sample squared gradient norm (Gain) combined with k-NN embedding density (Need).
-# Plasticity decay disabled here; see utility_with_decay.yaml for the combined run.
+# Gain x Need utility replay selection, synaptic homeostasis OFF.
+#
+# `replay_criteria` picks the per-sample score (loss vs utility = Gain x Need);
+# `replay_strategy` picks how the buffer is drawn from those scores
+# (strict / weighted / random). "utility" is a criteria, not a strategy: with
+# replay_strategy set to "utility" the sampler matches no branch and the
+# replay buffer stays empty.
+#
+# Regime matches the 8/25 rerun matrix (sleep_wake_ratio 20) so results are
+# comparable to the loss-criterion cells.
 
 wake_block_steps: 9999999
-sleep_wake_ratio: 5.0 # num eq. epochs - 1
-replay_ratio: 0.3
-replay_strategy: "utility"
-replay_decay_rate: 0.7
+sleep_wake_ratio: 20.0 # num eq. epochs - 1
+replay_ratio: 0.1
+replay_strategy: "weighted"
+replay_criteria: "utility"
+replay_decay_rate: 0.1
 n_augmentations: 40
 n_phases: 50
 max_seq_length: 128

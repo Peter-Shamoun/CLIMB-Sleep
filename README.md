@@ -102,6 +102,27 @@ Set your sweep ranges in the `scripts/sweep.yaml` file. Then, run
 python run_sweep.py
 ```
 
+### Synaptic Homeostasis (SH) Experiments
+
+SH multiplies every weight by `shrink_factor` after each sleep phase except the top `protect_top_fraction` ranked by an importance signal (`fisher`, `taylor_signed`, `taylor_abs`; see `src/config.py:PlasticityDecayParams`). It works under both tasks; the `sh_*` configs share one replay regime so the shrink is the only difference between arms.
+
+Smoke test (two cycles, fires scoring and shrink once each; works with `task=base_clm` or `task=base_mlm`):
+```
+python train.py sleep_mechanism=sh_smoke experiment.dry_run=true trainer.max_training_steps=400 experiment.name=sh-clm-smoke
+```
+Look for `Scored taylor_signed saliency at WAKE->SLEEP`, `Importance shrink applied: shrunk=...`, and the `time/sh_*` metrics on WandB.
+
+Single arms:
+```
+python train.py sleep_mechanism=sh_off                                       # control
+python train.py sleep_mechanism=sh_taylor_signed sleep_mechanism.plasticity_decay.shrink_factor=0.9 sleep_mechanism.plasticity_decay.protect_top_fraction=0.5
+python train.py sleep_mechanism=sh_fisher                                    # ~6x slower: per-sample grads every wake step
+```
+
+Stage 1 grid (Taylor signals x shrink x protect x seeds) is in `scripts/sh_grid.yaml`; point `run_sweep.py` at it. Run `sh_off` with the same seeds as the control, then `sh_fisher` at the best stage-1 setting as stage 2.
+
+Every run logs wall-clock accounting to WandB: `time/wake_phase_sec`, `time/sleep_phase_sec`, `time/train_wall_sec`, and the SH overhead `time/per_sample_grad_sec`, `time/sh_score_sec`, `time/sh_shrink_sec`, `time/sh_total_sec`.
+
 ### Other Experiments
 
 Various other experiments are located in different branches of this repository.

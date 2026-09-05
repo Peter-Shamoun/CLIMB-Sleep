@@ -162,6 +162,15 @@ class CustomTrainer(Trainer):
         )
         self._last_wake_batch: Optional[Dict[str, torch.Tensor]] = None
 
+        # Wall-clock accounting (reviewer-requested GPU-hour reporting). Phase
+        # time excludes the eval that runs at each switch. SH costs are
+        # cumulative seconds across the run so the overhead of a signal can be
+        # read off WandB directly: Fisher pays per_sample_grad on every wake
+        # step, Taylor pays one scoring pass per cycle.
+        self._train_wall_start: Optional[float] = None
+        self._phase_wall_start: Optional[float] = None
+        self._sh_time_sec = {"per_sample_grad": 0.0, "score": 0.0, "shrink": 0.0}
+
         self.phase_steps = 0
 
         # NOTE: The hidden dimension of the base model is the input dimension to the task head
@@ -398,6 +407,7 @@ class CustomTrainer(Trainer):
                 )
             )
             if need_per_sample_grads:
+                _t0 = time.time()
                 grads_dict = per_sample_grads(
                     unwrap_model(model),
                     input_ids,
@@ -405,6 +415,7 @@ class CustomTrainer(Trainer):
                     labels,
                     self.task_name,
                 )
+                self._sh_time_sec["per_sample_grad"] += time.time() - _t0
                 if (
                     self._plasticity_decay_enabled
                     and not self._taylor_signal_enabled
@@ -800,6 +811,8 @@ class CustomTrainer(Trainer):
         Override train to re-intialize phase steps.
         """
         self.phase_steps = 0
+        self._train_wall_start = time.time()
+        self._phase_wall_start = self._train_wall_start
         try:
             return super().train(
                 resume_from_checkpoint=resume_from_checkpoint, *args, **kwargs
@@ -815,6 +828,11 @@ class CustomTrainer(Trainer):
 
     def _swap_phase(self, sampler: SleepSampler, phase: str, next_phase: str):
         logger.info("Ending %s phase...", phase)
+        phase_wall_sec = (
+            time.time() - self._phase_wall_start
+            if self._phase_wall_start is not None
+            else float("nan")
+        )
         self.phase_steps = 0
         # eval before sleep
         logger.info("Running evaluation before %s phase...", next_phase)
@@ -847,7 +865,9 @@ class CustomTrainer(Trainer):
 
             # Apply post-sleep shrink using the Fisher diagonal from the previous wake.
             if self._plasticity_decay_enabled:
+                _t0 = time.time()
                 self._apply_fisher_shrink()
+                self._sh_time_sec["shrink"] += time.time() - _t0
 
         # Utility replay needs Need scores keyed by the same indices as gain
         # (the canonical candidate pool for utility selection).
@@ -867,7 +887,9 @@ class CustomTrainer(Trainer):
                 sampler.update_utility_scores(need_scores)
             # Finalize Fisher diagonal from the wake phase that just ended.
             if self._plasticity_decay_enabled:
+                _t0 = time.time()
                 self._finalize_fisher()
+                self._sh_time_sec["score"] += time.time() - _t0
 
         logger.info("Switching to %s phase...", next_phase)
         sampler.switch_phase(next_phase)
@@ -884,6 +906,25 @@ class CustomTrainer(Trainer):
         )
         logger.info("Rebuilding train dataloader...")
         self._train_dataloader = None
+
+        timing = {
+            f"time/{phase.lower()}_phase_sec": phase_wall_sec,
+            "time/train_wall_sec": (
+                time.time() - self._train_wall_start
+                if self._train_wall_start is not None
+                else float("nan")
+            ),
+            "time/per_sample_grad_sec": self._sh_time_sec["per_sample_grad"],
+            "time/sh_score_sec": self._sh_time_sec["score"],
+            "time/sh_shrink_sec": self._sh_time_sec["shrink"],
+        }
+        timing["time/sh_total_sec"] = (
+            timing["time/sh_score_sec"] + timing["time/sh_shrink_sec"]
+        )
+        self.log(timing)
+        # Restart the phase clock after the eval + bookkeeping above so the
+        # next phase's number is training time only.
+        self._phase_wall_start = time.time()
 
     def _accumulate_fisher(self, grads_dict: Dict[str, torch.Tensor]) -> None:
         """Add this batch's squared per-sample gradients to the Fisher running totals."""
