@@ -106,11 +106,11 @@ python run_sweep.py
 
 SH multiplies every weight by `shrink_factor` after each sleep phase except the top `protect_top_fraction` ranked by an importance signal (`fisher`, `taylor_signed`, `taylor_abs`; see `src/config.py:PlasticityDecayParams`). It works under both tasks; the `sh_*` configs share one replay regime so the shrink is the only difference between arms.
 
-Smoke test (two cycles, fires scoring and shrink once each; works with `task=base_clm` or `task=base_mlm`):
+Smoke test (2 cycles x 100 wake + 100 sleep steps; fires scoring and shrink once each; works with `task=base_clm` or `task=base_mlm`):
 ```
-python train.py sleep_mechanism=sh_smoke experiment.dry_run=true trainer.max_training_steps=400 experiment.name=sh-clm-smoke
+python train.py sleep_mechanism=sh_smoke dataset=strict_small experiment.dry_run=true trainer.num_warmup_steps=50 experiment.name=sh-clm-smoke experiment.group=sh-smoke
 ```
-Look for `Scored taylor_signed saliency at WAKE->SLEEP`, `Importance shrink applied: shrunk=...`, and the `time/sh_*` metrics on WandB.
+Look for `Scored taylor_signed saliency at WAKE->SLEEP`, `Importance shrink applied: shrunk=...`, and the `time/sh_*` metrics on WandB. On Nautilus, `scripts/k8s/sh_smoke_job.yaml` runs the same command as a one-pod Job (fill the token placeholders before `kubectl create -f`).
 
 Single arms:
 ```

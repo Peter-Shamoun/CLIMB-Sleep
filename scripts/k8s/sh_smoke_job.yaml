@@ -1,0 +1,89 @@
+# One-pod Nautilus Job for the synaptic-homeostasis smoke test under CLM.
+# Mirrors the replay-batch-* Jobs (image, setup.sh, PVC, node exclusions).
+# Fill the __*__ placeholders from your env before applying; never commit
+# a rendered copy.
+#   kubectl create -f <rendered>.yaml -n dsc-capstone-25-26
+#   kubectl get pods -n dsc-capstone-25-26 -l job-name=sh-smoke-clm-001
+#   kubectl logs -f <pod> -n dsc-capstone-25-26
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sh-smoke-clm-001
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: gpu-container
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        env:
+        - name: HF_READ_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_WRITE_TOKEN
+          value: "__HF_WRITE_TOKEN__"
+        - name: HUGGINGFACE_HUB_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_HOME
+          value: /mnt/data/huggingface
+        - name: WANDB_API_KEY
+          value: "__WANDB_API_KEY__"
+        - name: RUN_NAME
+          value: "sh-clm-smoke-001"
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "Pod started with PyTorch + CUDA"
+          apt-get update --fix-missing && apt-get install -y --no-install-recommends git unzip
+          git clone https://github.com/Peter-Shamoun/CLIMB-Sleep.git
+          cd CLIMB-Sleep
+          git checkout main_refactor
+          git log --oneline -1
+          ./setup.sh /mnt/data/evaluation_data.zip
+          . .venv/bin/activate
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          which python
+          python train.py sleep_mechanism=sh_smoke dataset=strict_small task=base_clm model=gpt2_small \
+            experiment.dry_run=true trainer.num_warmup_steps=50 \
+            experiment.name=$RUN_NAME experiment.group=sh-smoke
+          echo "Finished smoke test"
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - k8s-gpu-01.calit2.optiputer.net
+                - k8s-chase-ci-01.calit2.optiputer.net
+                - k8s-chase-ci-02.calit2.optiputer.net
+                - k8s-chase-ci-03.calit2.optiputer.net
+                - k8s-chase-ci-04.calit2.optiputer.net
+                - k8s-chase-ci-05.calit2.optiputer.net
+                - k8s-haosu-15.sdsc.optiputer.net
+                - k8s-haosu-18.sdsc.optiputer.net
+                - k8s-haosu-11.sdsc.optiputer.net
+                - k8s-ravi-01.calit2.optiputer.net
+                - chi-dgx-node02.csuchico.edu
+                - fiona8-1.calit2.uci.edu
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: scl-replay-experiments-2
