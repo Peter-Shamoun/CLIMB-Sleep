@@ -90,6 +90,7 @@ spec:
                 - fiona8-1.calit2.uci.edu
                 - nautilus-ext-gpu01.fullerton.edu
                 - hcc-chase-shor-c4705.unl.edu
+                - k8s-chase-ci-07.calit2.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:

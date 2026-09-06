@@ -1,0 +1,143 @@
+# Offline BabyLM zero-shot eval Job (BLiMP, supplement, entity tracking, wug,
+# reading) over finished runs' final checkpoints. One Indexed Job; pod i
+# evaluates every i-th run of the RUNS list, so a handful of pods cover the
+# whole list with one setup.sh each.
+#
+# SOURCE=ckpt   : assemble the model from <run>/checkpoint-<max>/ (the trainer's
+#                 full save, head included) plus the tokenizer files from
+#                 <run>/lm_model/. Use this for every run whose lm_model/ was
+#                 exported before the head fix (all CLM runs up to Sep 6 2026).
+# SOURCE=lm_model: evaluate <run>/lm_model/ as is (May 2026 MLM runs).
+# MODE=fast | full : eval_zero_shot_fast.sh (fast_eval) or eval_zero_shot.sh
+#                 (full BLiMP etc.); results land under
+#                 /mnt/data/eval_outputs/<run>/<step>/zero_shot/<backend>/ (fast)
+#                 or .../<run>/<step>_full/zero_shot/<backend>/ (full).
+# Placeholders: __TAG__, __PODS__, __RUNS__ (space-separated run names),
+# __BACKEND__ (causal|mlm), __MODE__, __SOURCE__, __PVC__, tokens as usual.
+# Never commit a rendered copy.
+#   kubectl create -f rendered.yaml -n dsc-capstone-25-26
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sh-eval-__TAG__
+spec:
+  completions: __PODS__
+  parallelism: __PODS__
+  completionMode: Indexed
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: gpu-container
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        env:
+        - name: HF_READ_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_WRITE_TOKEN
+          value: "__HF_WRITE_TOKEN__"
+        - name: HUGGINGFACE_HUB_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_HOME
+          value: /mnt/data/huggingface
+        - name: WANDB_API_KEY
+          value: "__WANDB_API_KEY__"
+        - name: PODS
+          value: "__PODS__"
+        - name: RUNS
+          value: "__RUNS__"
+        - name: BACKEND
+          value: "__BACKEND__"
+        - name: MODE
+          value: "__MODE__"
+        - name: SOURCE
+          value: "__SOURCE__"
+        - name: EVAL_OUT
+          value: /mnt/data/eval_outputs
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "Pod started with PyTorch + CUDA"
+          apt-get update --fix-missing && apt-get install -y --no-install-recommends git unzip
+          git clone https://github.com/Peter-Shamoun/CLIMB-Sleep.git
+          cd CLIMB-Sleep
+          git checkout main_refactor
+          git log --oneline -1
+          ./setup.sh /mnt/data/evaluation_data.zip
+          . .venv/bin/activate
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          which python
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+          B=/mnt/data/checkpoints/sleep-consolidated-learning
+          P=$(pwd)/lib/evaluation-pipeline-2025
+          i=0
+          for RUN in $RUNS; do
+            if [ $((i % PODS)) -eq "$JOB_COMPLETION_INDEX" ]; then
+              echo "=== EVAL $RUN (pod $JOB_COMPLETION_INDEX, source=$SOURCE, mode=$MODE, backend=$BACKEND)"
+              ckpt=$(ls -d $B/$RUN/checkpoint-* 2>/dev/null | sed 's#.*checkpoint-##' | sort -n | tail -1)
+              [ -z "$ckpt" ] && ckpt=0
+              mkdir -p $EVAL_OUT/$RUN
+              if [ "$SOURCE" = "ckpt" ]; then
+                M=/tmp/m_$RUN; rm -rf $M; mkdir -p $M
+                cp $B/$RUN/checkpoint-$ckpt/config.json $B/$RUN/checkpoint-$ckpt/model.safetensors $M/
+                cp $B/$RUN/checkpoint-$ckpt/generation_config.json $M/ 2>/dev/null || true
+                cp $B/$RUN/lm_model/tokenizer.json $B/$RUN/lm_model/tokenizer_config.json $M/
+                cp $B/$RUN/lm_model/special_tokens_map.json $M/ 2>/dev/null || true
+              else
+                M=$B/$RUN/lm_model
+              fi
+              if [ "$MODE" = "full" ]; then
+                (cd $P && ./eval_zero_shot.sh $M $BACKEND) 2>&1 | tee $EVAL_OUT/$RUN/${ckpt}_full.log
+                mkdir -p $EVAL_OUT/$RUN/${ckpt}_full
+                cp -r $P/results/$(basename $M)/main/zero_shot $EVAL_OUT/$RUN/${ckpt}_full/
+                rm -rf $P/results/$(basename $M)
+              else
+                (cd $P && ./eval_zero_shot_fast.sh $M $EVAL_OUT/$RUN/$ckpt $BACKEND) 2>&1 | tee $EVAL_OUT/$RUN/$ckpt.log
+              fi
+              [ "$SOURCE" = "ckpt" ] && rm -rf $M
+              echo "=== DONE $RUN step $ckpt"
+            fi
+            i=$((i+1))
+          done
+          echo "Finished eval pod $JOB_COMPLETION_INDEX"
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - k8s-gpu-01.calit2.optiputer.net
+                - k8s-chase-ci-01.calit2.optiputer.net
+                - k8s-chase-ci-02.calit2.optiputer.net
+                - k8s-chase-ci-03.calit2.optiputer.net
+                - k8s-chase-ci-04.calit2.optiputer.net
+                - k8s-chase-ci-05.calit2.optiputer.net
+                - k8s-haosu-15.sdsc.optiputer.net
+                - k8s-haosu-18.sdsc.optiputer.net
+                - k8s-haosu-11.sdsc.optiputer.net
+                - k8s-ravi-01.calit2.optiputer.net
+                - chi-dgx-node02.csuchico.edu
+                - fiona8-1.calit2.uci.edu
+                - nautilus-ext-gpu01.fullerton.edu
+                - hcc-chase-shor-c4705.unl.edu
+                - k8s-chase-ci-07.calit2.optiputer.net
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: __PVC__
