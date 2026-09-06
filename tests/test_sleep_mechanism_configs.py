@@ -100,3 +100,26 @@ def test_baseline_like_clm_matches_sleep_cell_budget():
     assert base["replay_ratio"] == 1.0
     assert base["contextualize_sleep"] is False
     assert base["sleep_wake_ratio"] == sleep["sleep_wake_ratio"] == 9.0
+
+
+def test_sh_rand_grid_shares_the_random_replay_regime():
+    """sh_rand_off / s90p20 / s90p50 / s80p20 / s80p50: random strategy, SH 2x2 on signed Taylor."""
+    arms = {
+        n: load(os.path.join(CONF_DIR, f"sh_rand_{n}.yaml"))
+        for n in ("off", "s90p20", "s90p50", "s80p20", "s80p50")
+    }
+    control = {k: v for k, v in arms["off"].items() if k != "plasticity_decay"}
+    assert control["replay_strategy"] == "random"
+    assert "plasticity_decay" not in arms["off"]
+    # Same regime as the strict sh_* arms except the strategy.
+    strict = {k: v for k, v in load(os.path.join(CONF_DIR, "sh_off.yaml")).items() if k != "replay_strategy"}
+    assert {k: v for k, v in control.items() if k != "replay_strategy"} == strict
+    grid = {"s90p20": (0.9, 0.2), "s90p50": (0.9, 0.5), "s80p20": (0.8, 0.2), "s80p50": (0.8, 0.5)}
+    for name, (shrink, protect) in grid.items():
+        cfg = arms[name]
+        assert {k: v for k, v in cfg.items() if k != "plasticity_decay"} == control, name
+        pd = cfg["plasticity_decay"]
+        assert pd["enabled"] is True
+        assert pd["importance_signal"] == "taylor_signed"
+        assert pd["shrink_factor"] == shrink and pd["protect_top_fraction"] == protect
+        assert pd["threshold_scope"] == "per_tensor"

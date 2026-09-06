@@ -1,0 +1,24 @@
+# SH 2x2 on the best CLM sleep cell (loss criterion, RANDOM strategy, replay_ratio 0.1;
+# TQ's rply_expmt_base_clm_loss_random_0.1_* runs are the no-SH control).
+# Only signed Taylor stayed neutral in the Sep 5 arms, so the grid varies
+# shrink_factor {0.9, 0.8} x protect_top_fraction {0.2, 0.5} on that signal.
+# Arm s90p50: shrink 0.9, protect top 50% per tensor, signed Taylor.
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 9.0 # num eq. epochs - 1
+replay_ratio: 0.1
+replay_strategy: "random"
+replay_criteria: "loss"
+replay_decay_rate: 0.05334773969181028
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+plasticity_decay:
+  enabled: true
+  decay_type: "fisher_protected_shrink"
+  importance_signal: "taylor_signed"
+  shrink_factor: 0.9
+  protect_top_fraction: 0.5
+  threshold_scope: "per_tensor"
