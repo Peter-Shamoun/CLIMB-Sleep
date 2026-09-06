@@ -46,13 +46,14 @@ from wandb import Table
 from src.data_curriculum.utility_scoring import compute_need_scores
 
 # Model Loading
-from src.models import load_base_model
+from src.models import build_inference_lm, load_base_model
 from src.synaptic_homeostasis import (
     apply_fisher_protected_shrink,
     taylor_saliency,
 )
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
+from src.utils.replay_score import per_sample_mean_token_loss
 from src.utils.per_sample_grad import (
     per_sample_grads,
     per_sample_squared_grad_norms,
@@ -438,14 +439,9 @@ class CustomTrainer(Trainer):
             per_sample_score = None
             if self.sleep_mechanism_cfg.replay_criteria == "loss":
                 # Score = cross entropy loss
-                per_sample_score = cross_entropy(
-                    logits, labels, reduction="none", **(loss_kwargs or {})
+                per_sample_score = per_sample_mean_token_loss(
+                    logits, labels, **(loss_kwargs or {})
                 )
-                # Ignore non-masked tokens; same as avg. score if task is "clm"
-                mask = (labels != -100).float()
-                per_sample_score = (per_sample_score * mask).sum(
-                    dim=-1
-                ) / mask.sum(dim=-1).clamp(min=1)
             elif self.sleep_mechanism_cfg.replay_criteria == "utility":
                 # Score = Utility = gain * need
                 # During wake phase, scores are stored as just gain
@@ -709,22 +705,12 @@ class CustomTrainer(Trainer):
 
     def _initialize_full_lm_model(self):
         """
-        Initialize a full language model that includes the base model and the task head.
+        Initialize a full language model (base model + LM head) carrying the
+        trained weights, for export to lm_model/.
         """
-
-        # copy hydra config and change base_model to include task head
-        lm_config = copy.deepcopy(self.hydra_config)
-
-        lm_model = load_base_model(lm_config)
-
-        # unwrapping the base model and the task head and copying that over into the lm model
-        setattr(
-            lm_model,
-            f"{lm_model.base_model_prefix}",
-            unwrap_model(self.model.base_model),
+        return build_inference_lm(
+            copy.deepcopy(self.hydra_config), unwrap_model(self.model)
         )
-
-        return lm_model
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         """

@@ -49,3 +49,23 @@ def load_base_model(cfg: BabyLMConfig) -> PreTrainedModel:
         logger.debug(f"{i}: {name} - Requires grad: {param.requires_grad}")
 
     return model
+
+
+def build_inference_lm(cfg: BabyLMConfig, trained_model: PreTrainedModel) -> PreTrainedModel:
+    """Return a full LM (trunk + output head) carrying the trained weights.
+
+    Used when exporting ``lm_model/`` for the BabyLM eval pipeline. When the
+    training model already is the LM-head class (``gpt2_clm``,
+    ``roberta_pre_layer_norm_mlm``) its whole state dict is copied, head
+    included. Grafting only ``base_model`` into a fresh LM (the previous
+    behaviour) left the freshly initialised head in place whenever
+    ``tie_word_embeddings`` is false, so every exported model scored at
+    chance on BLiMP regardless of training. For a trunk-only training model
+    the trunk is grafted as before.
+    """
+    lm_model = load_base_model(cfg)
+    if type(trained_model) is type(lm_model):
+        lm_model.load_state_dict(trained_model.state_dict())
+    else:
+        setattr(lm_model, lm_model.base_model_prefix, trained_model.base_model)
+    return lm_model
