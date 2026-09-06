@@ -71,3 +71,32 @@ def test_sh_arms_share_the_replay_regime():
     assert "plasticity_decay" not in arms["sh_off"]
     for name in ("sh_taylor_signed", "sh_taylor_abs", "sh_fisher"):
         assert arms[name]["plasticity_decay"]["importance_signal"] == name[len("sh_"):]
+
+
+def _train_py_step_budget(cfg, total_wake_steps):
+    """Replicates the step-budget formula in train.py (sleep_wake_ratio > 0)."""
+    import math
+
+    n_phases = cfg["n_phases"]
+    total_wake_steps = min(cfg["wake_block_steps"] * n_phases, total_wake_steps)
+    wake_per_phase = math.ceil(total_wake_steps / n_phases)
+    sleep_per_phase = int(wake_per_phase * cfg["sleep_wake_ratio"])
+    return int(total_wake_steps + sleep_per_phase * n_phases)
+
+
+def test_baseline_like_clm_matches_sleep_cell_budget():
+    """The CLM epoch control trains for the same 10-epoch budget as the sh_* cells."""
+    # strict 100M at batch 32: ceil(len(train) / 32) = 34,394 wake steps
+    # (train/global_step 343,994 on the sh-arms-clm and rply_expmt_*_0.1 runs).
+    total_wake = 34394
+    base = load(os.path.join(CONF_DIR, "baseline_like_clm.yaml"))
+    sleep = load(os.path.join(CONF_DIR, "sh_off.yaml"))
+    assert _train_py_step_budget(sleep, total_wake) == 343994
+    assert _train_py_step_budget(base, total_wake) == 343940
+    # Only per-phase ceil rounding separates the two budgets (< 0.02%).
+    assert abs(343994 - 343940) / 343994 < 2e-4
+    # Epoch semantics: one phase, replay everything, no contextualization.
+    assert base["n_phases"] == 1
+    assert base["replay_ratio"] == 1.0
+    assert base["contextualize_sleep"] is False
+    assert base["sleep_wake_ratio"] == sleep["sleep_wake_ratio"] == 9.0
