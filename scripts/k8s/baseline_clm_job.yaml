@@ -1,6 +1,7 @@
 # Multi-seed Nautilus Job for the matched-budget CLM epoch baseline
 # (sleep_mechanism=baseline_like_clm, 343,940 steps = 10 equivalent epochs).
-# Each completion index is one seed (SEED = index + 1); run names
+# Each completion index is one seed (SEED = index + 1 + __SEED_OFFSET__; 0 for a fresh matrix,
+# e.g. 4 to relaunch only seed 5 with __SEEDS__=1); run names
 # baseline_clm_<seed>, W&B group baseline-clm. Mirrors sh_arms_job.yaml.
 # Placeholders: __SEEDS__, __HF_READ_TOKEN__, __HF_WRITE_TOKEN__,
 # __WANDB_API_KEY__. Never commit a rendered copy.
@@ -9,7 +10,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: sh-baseline-clm-001
+  name: sh-baseline-clm-__TAG__
 spec:
   completions: __SEEDS__
   parallelism: __SEEDS__
@@ -33,6 +34,8 @@ spec:
           value: /mnt/data/huggingface
         - name: WANDB_API_KEY
           value: "__WANDB_API_KEY__"
+        - name: SEED_OFFSET
+          value: "__SEED_OFFSET__"
         - name: GROUP
           value: "baseline-clm"
         command: ["/bin/bash", "-c"]
@@ -50,7 +53,7 @@ spec:
           export PATH="$(pwd)/.venv/bin:$PATH"
           which python
           nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
-          export SEED=$((JOB_COMPLETION_INDEX + 1))
+          export SEED=$((JOB_COMPLETION_INDEX + 1 + SEED_OFFSET))
           export RUN_NAME=baseline_clm_${SEED}
           echo "Run: $RUN_NAME (seed=$SEED)"
           python train.py sleep_mechanism=baseline_like_clm task=base_clm model=gpt2_small dataset=strict \

@@ -1,5 +1,5 @@
 # Multi-seed Nautilus Job for one synaptic-homeostasis arm (CLM or MLM).
-# One Job per arm; each completion index is one seed (SEED = index + 1).
+# One Job per arm; each completion index is one seed (SEED = index + 1 + __SEED_OFFSET__).
 # Mirrors the replay-batch-* Jobs (image, setup.sh, PVC, node exclusions).
 # Placeholders: __ARM__ (sleep_mechanism=sh_<ARM>: off | taylor_signed | taylor_abs
 # | fisher | rand_off | rand_s90p20 ...), __ARM_DASHED__ (same with '-'), __TAG__
@@ -40,6 +40,8 @@ spec:
           value: "__WANDB_API_KEY__"
         - name: ARM
           value: "__ARM__"
+        - name: SEED_OFFSET
+          value: "__SEED_OFFSET__"
         - name: GROUP
           value: "__GROUP__"
         - name: TASK
@@ -63,7 +65,7 @@ spec:
           export PATH="$(pwd)/.venv/bin:$PATH"
           which python
           nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
-          export SEED=$((JOB_COMPLETION_INDEX + 1))
+          export SEED=$((JOB_COMPLETION_INDEX + 1 + SEED_OFFSET))
           export RUN_NAME=${RUN_PREFIX}${ARM}_${SEED}
           echo "Run: $RUN_NAME (arm=$ARM seed=$SEED task=$TASK model=$MODEL)"
           python train.py sleep_mechanism=sh_${ARM} task=$TASK model=$MODEL dataset=strict \
