@@ -1,9 +1,9 @@
 defaults:
   - base_config
   - _self_
-  - dataset: strict_small
-  - objective_curriculum: base_mlm
-  - model: roberta_pln_small
+  - dataset: strict
+  - task: base_clm
+  - model: gpt2_small
   - tokenizer: cbt_8192
   # Uncomment the following line to enable sleep mechanism:
   - sleep_mechanism: default
@@ -18,8 +18,8 @@ model:
 experiment:
   seed: 42
   entity: "lemn-lab"
-  group: "sleep-consolidated-learning"
-  name: "default-run"
+  project: "sleep-consolidated-learning"
+  name: "clm-test-run"
   output_dir: "/mnt/data"
 
 data_preprocessing:
@@ -30,8 +30,8 @@ data_preprocessing:
 trainer:
   batch_size: 32 # across 4 GPUs gives an effective batch size of 128
   lr: 1e-3 # 1e-4 is used in fairseq; 1e-3 is default in huggingface
-  num_warmup_steps: 100_000
-  max_training_steps: 400_000
+  num_warmup_steps: 1_000
+  max_training_steps: 80_000
   eval_blimp: False
   eval_fast: False
   eval_glue: False

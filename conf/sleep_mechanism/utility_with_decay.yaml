@@ -1,0 +1,30 @@
+# Gain x Need utility replay + Fisher-protected synaptic homeostasis.
+# After each sleep phase every weight is multiplied by shrink_factor except
+# the top protect_top_fraction by accumulated squared per-sample gradient.
+# Fisher control arm; taylor_with_decay.yaml is the head-to-head comparison.
+# See utility.yaml for the criteria/strategy distinction.
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 20.0 # num eq. epochs - 1
+replay_ratio: 0.1
+replay_strategy: "weighted"
+replay_criteria: "utility"
+replay_decay_rate: 0.1
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+utility_temperature_gain: 1.0
+utility_temperature_need: 1.0
+need_knn_k: 50
+need_embedding_layers: 4
+
+plasticity_decay:
+  enabled: true
+  decay_type: "fisher_protected_shrink"
+  # "fisher" | "taylor_signed" | "taylor_abs" -- see PlasticityDecayParams.
+  importance_signal: "fisher"
+  shrink_factor: 0.95
+  protect_top_fraction: 0.20
+  threshold_scope: "per_tensor"

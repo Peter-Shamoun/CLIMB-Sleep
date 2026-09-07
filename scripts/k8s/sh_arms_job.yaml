@@ -1,0 +1,113 @@
+# Multi-seed Nautilus Job for one synaptic-homeostasis arm (CLM or MLM).
+# One Job per arm; each completion index is one seed (SEED = index + 1 + __SEED_OFFSET__).
+# Mirrors the replay-batch-* Jobs (image, setup.sh, PVC, node exclusions).
+# Placeholders: __ARM__ (sleep_mechanism=sh_<ARM>: off | taylor_signed | taylor_abs
+# | fisher | rand_off | rand_s90p20 ...), __ARM_DASHED__ (same with '-'), __TAG__
+# (Job suffix, e.g. 001 or mlm-001), __SEEDS__ (completions = parallelism),
+# __TASK__ (base_clm | base_mlm), __MODEL__ (gpt2_small | roberta_pln_small),
+# __GROUP__ (W&B group), __RUN_PREFIX__ (run name = <prefix><ARM>_<seed>, e.g.
+# sh_expmt_base_clm_), __HF_READ_TOKEN__, __HF_WRITE_TOKEN__, __WANDB_API_KEY__.
+# Never commit a rendered copy.
+#   sed -e s/__ARM__/taylor_signed/ -e s/__SEEDS__/3/ ... > rendered.yaml
+#   kubectl create -f rendered.yaml -n dsc-capstone-25-26
+#   kubectl get pods -n dsc-capstone-25-26 -l job-name=sh-arm-taylor-signed-001
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sh-arm-__ARM_DASHED__-__TAG__
+spec:
+  completions: __SEEDS__
+  parallelism: __SEEDS__
+  completionMode: Indexed
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: gpu-container
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        env:
+        - name: HF_READ_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_WRITE_TOKEN
+          value: "__HF_WRITE_TOKEN__"
+        - name: HUGGINGFACE_HUB_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_HOME
+          value: /mnt/data/huggingface
+        - name: WANDB_API_KEY
+          value: "__WANDB_API_KEY__"
+        - name: ARM
+          value: "__ARM__"
+        - name: SEED_OFFSET
+          value: "__SEED_OFFSET__"
+        - name: GROUP
+          value: "__GROUP__"
+        - name: TASK
+          value: "__TASK__"
+        - name: MODEL
+          value: "__MODEL__"
+        - name: RUN_PREFIX
+          value: "__RUN_PREFIX__"
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "Pod started with PyTorch + CUDA"
+          apt-get update --fix-missing && apt-get install -y --no-install-recommends git unzip
+          git clone https://github.com/Peter-Shamoun/CLIMB-Sleep.git
+          cd CLIMB-Sleep
+          git checkout main_refactor
+          git log --oneline -1
+          ./setup.sh /mnt/data/evaluation_data.zip
+          . .venv/bin/activate
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          which python
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+          export SEED=$((JOB_COMPLETION_INDEX + 1 + SEED_OFFSET))
+          export RUN_NAME=${RUN_PREFIX}${ARM}_${SEED}
+          echo "Run: $RUN_NAME (arm=$ARM seed=$SEED task=$TASK model=$MODEL)"
+          python train.py sleep_mechanism=sh_${ARM} task=$TASK model=$MODEL dataset=strict \
+            experiment.seed=$SEED experiment.name=$RUN_NAME experiment.group=$GROUP
+          echo "Finished Training!"
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - k8s-gpu-01.calit2.optiputer.net
+                - k8s-chase-ci-01.calit2.optiputer.net
+                - k8s-chase-ci-02.calit2.optiputer.net
+                - k8s-chase-ci-03.calit2.optiputer.net
+                - k8s-chase-ci-04.calit2.optiputer.net
+                - k8s-chase-ci-05.calit2.optiputer.net
+                - k8s-haosu-15.sdsc.optiputer.net
+                - k8s-haosu-18.sdsc.optiputer.net
+                - k8s-haosu-11.sdsc.optiputer.net
+                - k8s-ravi-01.calit2.optiputer.net
+                - chi-dgx-node02.csuchico.edu
+                - fiona8-1.calit2.uci.edu
+                - nautilus-ext-gpu01.fullerton.edu
+                - hcc-chase-shor-c4705.unl.edu
+                - k8s-chase-ci-07.calit2.optiputer.net
+                - hcc-nrp-shor-c6017.unl.edu
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: scl-replay-experiments-2

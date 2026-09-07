@@ -35,5 +35,8 @@ def load_tokenizer(cfg: BabyLMConfig) -> PreTrainedTokenizerFast:
     assert isinstance(
         tokenizer, PreTrainedTokenizerFast
     ), "Tokenizer needs to be a PreTrainedTokenizerFast"
-
+    if cfg.task.task == "clm":
+        assert tokenizer.pad_token_id is not None, "Tokenizer must have pad token"
+    else:
+        assert tokenizer.mask_token_id is not None, "Tokenizer must have mask token"
     return tokenizer

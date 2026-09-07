@@ -8,25 +8,25 @@
 ### _Humans don't relive the same day ten times. Why should language models?_
 
 Language Models (LMs), while powerful, are extremely resource-intensive to train.
-Effective LMs require hundreds of times more data to build an understanding of language than human children, often more text than a human will ever be exposed to in their entire lifetime.
-Additionally, training modern language models is expensive and repetitive.
-Models read the same data over and over, sometimes dozens of times, to learn effectively.
+Effective LMs require hundreds of times more data than human children, often more text than a human will ever be exposed to in their entire lifetime.
+Additionally, training modern language models is repetitive.
+Models read the same data over and over, sometimes hundreds of times, to learn effectively.
 This is entirely different from how humans acquire language/knowledge: we live through every day once, and experience everything only once.
-In addition to not being cognitively plausible, epoch training means that even after the model has mastered easier samples, it is still re-trained on those same samples in the same contexts as before, wasting resources and leading to overfitting.
-This disconnect between the training schedules of LMs and human language acquisition could not only contribute to their inefficiency, but also means that there are strong limitations in the use and interpretation of LMs as cognitive models.
+It also means that after the model has mastered easier samples, it is still re-trained on those same samples in the same contexts as before, wasting resources and leading to overfitting.
+This disconnect between human language acquisition and the training schedules of LMs both contributes to LMs' inefficiency and imposes strong limitations in the use of LMs as cognitive models.
 
-Humans, however, do revisit past experiences during sleep.
+Humans, however, do revisit past experiences during *sleep*.
 Neuroscience research has shown that sleep is not just a period of rest, but critical for developing memories.
 While the waking brain is optimized for encoding new experiences into memory, during sleep, the brain undergoes a process called _memory consolidation_, where they are stabilized and integrated into pre-existing synaptic networks.
 By consolidating abstract representations of our memories in sleeping periods, humans also retain world knowledge and episodic memory of recent events (declarative memory) as well as intuition and unconscious long-term memories that influence their behavior (non-declarative memory), both of which are important for learning complex skills such as language.
 
-It is clear that sleep is a process of utmost importance for cognitive development, and contributes to how humans are able to quickly encode and retain information from recent experiences without truly experiencing them more than once.
+It is clear that sleep is a process of utmost importance for cognitive development and contributes to how humans are able to quickly encode and retain information from recent experiences without truly experiencing them more than once.
 In this project, we will explore sleep-inspired, cognitively-plausible training schedules for language models in the hopes of producing data-efficient training paradigms that diverge from standard multi-epoch conventions.
 
 **Contributions.**
 Due to similarities in goal and implementation, we build upon the code of Diehl Martinez et. al. (<a href="https://github.com/codebyzeb/CLIMB">GitHub</a>), for our training pipeline.
 We reuse their data preprocessing and model loading scripts.
-However, we contribute a novel data loading strategy and training schedule, which we dub the sleep mechanism.
+However, we contribute a novel data loading strategy and training schedule, which we dub the *sleep mechanism*.
 
 ## Setup
 
@@ -101,6 +101,27 @@ Set your sweep ranges in the `scripts/sweep.yaml` file. Then, run
 ```
 python run_sweep.py
 ```
+
+### Synaptic Homeostasis (SH) Experiments
+
+SH multiplies every weight by `shrink_factor` after each sleep phase except the top `protect_top_fraction` ranked by an importance signal (`fisher`, `taylor_signed`, `taylor_abs`; see `src/config.py:PlasticityDecayParams`). It works under both tasks; the `sh_*` configs share one replay regime so the shrink is the only difference between arms. That regime is the Sep 2026 rerun cell `loss / strict / replay_ratio 0.1` on `default.yaml` (swr 9, decay 0.0533, n_phases 50), so the `rply_expmt_base_clm_loss_strict_0.1_*` runs are extra no-SH controls.
+
+Smoke test (2 cycles x 100 wake + 100 sleep steps; fires scoring and shrink once each; works with `task=base_clm` or `task=base_mlm`):
+```
+python train.py sleep_mechanism=sh_smoke dataset=strict_small experiment.dry_run=true trainer.num_warmup_steps=50 experiment.name=sh-clm-smoke experiment.group=sh-smoke
+```
+Look for `Scored taylor_signed saliency at WAKE->SLEEP`, `Importance shrink applied: shrunk=...`, and the `time/sh_*` metrics on WandB. On Nautilus, `scripts/k8s/sh_smoke_job.yaml` runs the same command as a one-pod Job (fill the token placeholders before `kubectl create -f`).
+
+Single arms:
+```
+python train.py sleep_mechanism=sh_off                                       # control
+python train.py sleep_mechanism=sh_taylor_signed sleep_mechanism.plasticity_decay.shrink_factor=0.9 sleep_mechanism.plasticity_decay.protect_top_fraction=0.5
+python train.py sleep_mechanism=sh_fisher                                    # ~6x slower: per-sample grads every wake step
+```
+
+Multi-seed arm runs on Nautilus: `scripts/k8s/sh_arms_job.yaml` (one Job per arm, one completion index per seed, W&B group `sh-arms-clm`, run names `sh_expmt_base_clm_{arm}_{seed}`). Stage 1 grid (Taylor signals x shrink x protect x seeds) is in `scripts/sh_grid.yaml`; point `run_sweep.py` at it. Run `sh_off` with the same seeds as the control, then `sh_fisher` at the best stage-1 setting as stage 2.
+
+Every run logs wall-clock accounting to WandB: `time/wake_phase_sec`, `time/sleep_phase_sec`, `time/train_wall_sec`, and the SH overhead `time/per_sample_grad_sec`, `time/sh_score_sec`, `time/sh_shrink_sec`, `time/sh_total_sec`.
 
 ### Other Experiments
 

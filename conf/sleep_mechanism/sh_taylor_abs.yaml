@@ -1,0 +1,23 @@
+# Synaptic homeostasis experiments: absolute first-order Taylor saliency.
+# Replay regime identical to sh_off (see that file); only plasticity_decay
+# differs. Score = |w * dL/dw| averaged over the last wake batch (Molchanov
+# et al. 2016, direction ignored); otherwise as sh_taylor_signed.
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 9.0 # num eq. epochs - 1
+replay_ratio: 0.1
+replay_strategy: "strict"
+replay_criteria: "loss"
+replay_decay_rate: 0.05334773969181028
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
+
+plasticity_decay:
+  enabled: true
+  decay_type: "fisher_protected_shrink"
+  importance_signal: "taylor_abs"
+  shrink_factor: 0.95
+  protect_top_fraction: 0.20
+  threshold_scope: "per_tensor"

@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
 from omegaconf import MISSING, DictConfig
-from enum import Enum
 
 
 @dataclass
@@ -16,10 +15,12 @@ class ExperimentParams(DictConfig):
 
     # Name of wandb entity experiment belongs to
     entity: str = MISSING
+
+    # Name of the wandb project that the current experimnet belongs to
+    project: str = MISSING
     
-    # Name of the group that the current experiment belongs to
-    # analogous to 'project' in wandb
-    group: str = MISSING
+    # Name of the wandb group that the current experiment belongs to
+    group: Optional[str] = None
 
     # whether to run a minimal version of the experiment
     dry_run: bool = False
@@ -36,6 +37,7 @@ class ExperimentParams(DictConfig):
 
     # Directory where outputs are saved, ex: model checkpoints, eval results
     output_dir: str = MISSING
+
 
 @dataclass
 class DatasetParams(DictConfig):
@@ -90,9 +92,18 @@ class TrainerParams(DictConfig):
 ### Curriculum learning parameter: can be either objective or data-driven ###
 
 
-## Objective curriculum learning parameters ##
+# ## Objective curriculum learning parameters ##
+# @dataclass
+# class TaskParams(DictConfig):
+
+
 @dataclass
-class ObjectiveCurriculumUnitParams(DictConfig):
+class TaskParams(DictConfig):
+    # Sets learning objective and task
+    # steps: Dict[str, List[float]] # No need, one task throughout
+
+    # Task: either mlm or clm
+    task: str
 
     # parameters for the task head architecture
     task_head_params: Optional[Dict[str, Any]] = field(default_factory=dict)
@@ -105,14 +116,6 @@ class ObjectiveCurriculumUnitParams(DictConfig):
 
     # Additional optional kwargs dependent on the objective curriculum unit
     optional_kwargs: Optional[Dict[str, Any]] = field(default_factory=dict)
-
-
-@dataclass
-class ObjectiveCurriculumParams(DictConfig):
-    # objective curriculum learning parameters
-
-    units: Dict[str, ObjectiveCurriculumUnitParams]
-    steps: Dict[str, List[float]]
 
 
 ## Data-driven curriculum learning parameters ##
@@ -134,39 +137,37 @@ class PacingFunctionParams(Mapping[str, Any]):
 DifficultyScorerKwargsType = Optional[Dict[str, Any]]
 
 
-@dataclass
-class DataCurriculumParams(DictConfig):
-    # data-driven curriculum learning parameters
-
-    # the column of the data to sort by (aka n_gram perplexity, sentence length, etc.)
-    difficulty_scorer_name: str
-
-    difficulty_scorer_kwargs: DifficultyScorerKwargsType
-
-    # one of ['linear', 'quad', 'root', 'step', 'exp', 'log'] or None, meaning no pacing
-    pacing_fn_name: str
-
-    pacing_fn_kwargs: PacingFunctionParams
-
-
-## Vocabulary curriculum parameters ##
-@dataclass
-class VocabularyCurriculumParams(DictConfig):
-    # vocabulary curriculum learning parameters
-
-    # the curriculum used to determine which tokens to map to <unk> (aka token_ids, part of speech etc.)
-    vocabulary_curriculum_name: str
-
-    # one of ['linear', 'quad', 'root', 'step', 'exp', 'log'] or None, meaning no pacing
-    pacing_fn_name: str
-
-    pacing_fn_kwargs: PacingFunctionParams
-
 # Plasticity decay for sleep mechanism
-class PlasticityDecayType(str, Enum):
-    lr_decay = "lr_decay"
-    freeze_layers = "freeze_layers"
-    pruning = "pruning"
+@dataclass
+class PlasticityDecayParams(DictConfig):
+    # Whether plasticity decay fires after sleep phases.
+    enabled: bool = False
+    # Only "fisher_protected_shrink" is implemented; kept as string for future variants.
+    decay_type: str = "fisher_protected_shrink"
+    # Which importance score decides what is protected from shrink. In all
+    # cases a HIGHER score means "more worth protecting"; the sign handling
+    # that makes that true lives in CustomTrainer._finalize_fisher.
+    #   "fisher" — E[grad^2] accumulated across the wake phase. Correlational:
+    #     it measures how much a weight's gradient moved, not what shrinking
+    #     it would do. This is the incumbent and the control arm.
+    #   "taylor_signed" — first-order effect of the shrink itself, scored once
+    #     at the end-of-wake weights. Shrinking a weight by (1 - shrink_factor)
+    #     changes the loss by about -(1 - shrink_factor) * w * grad, so a
+    #     NEGATIVE w*grad means shrinking would raise the loss: protect it.
+    #   "taylor_abs" — magnitude |w * grad|, the criterion in Molchanov et al.
+    #     (arXiv 1611.06440). Preferred if the signed mean turns out to be
+    #     dominated by batch noise near a minimum.
+    importance_signal: str = "fisher"
+    # Multiplicative factor applied to non-protected weights after each sleep phase.
+    shrink_factor: float = 0.95
+    # Fraction of weights protected from shrink (ranked by importance score).
+    protect_top_fraction: float = 0.20
+    # How the protect cutoff is computed.
+    #   "per_tensor" — one quantile per parameter tensor. Correct when score
+    #     magnitudes differ across tensors, but imposes per-layer homeostasis.
+    #   "global" — one quantile over all scores pooled. Matches SHY's global
+    #     renormalization, but lets the largest-magnitude tensor dominate.
+    threshold_scope: str = "per_tensor"
 
 
 # Sleep mechanism params
@@ -174,20 +175,19 @@ class PlasticityDecayType(str, Enum):
 class SleepMechanismParams(DictConfig):
     # Number of steps to train on new data before entering sleep
     wake_block_steps: int
-    # Maximum number of steps allowed in a sleep phase
-    sleep_max_steps: int
-    # Target loss value to exit sleep phase early
-    # SHOULD WE MAKE THIS OPTIONAL??
-    # sleep_loss_threshold: Optional[float] = None
-    sleep_loss_threshold: float
+    # Ratio of total sleep steps to total wake steps
+    # If negative, training length is determined by max_training_steps
+    sleep_wake_ratio: float = -1.0
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
-    # How to select samples from replay buffer. Choose from random, weighted, or strict.
+    # How to select samples from replay buffer. Choose from random, weighted, strict, or utility.
     replay_strategy: str = "weighted"
-    # Plasticity decay type
-    # plasticity_decay_type: PlasticityDecayType = PlasticityDecayType.lr_decay
-    # Factor by which to decay plasticity
-    # plasticity_decay_rate: float = 0.9
+    # Criteria to select samples for replay. Choose from 'loss' or 'utility'.
+    replay_criteria: str = "loss"
+    # Decay rate for wake candidates from previous phases
+    replay_decay_rate: float = 0.7
+    # Minimum decay factor, to ensure older samples are never completely removed from consideration.
+    min_decay_factor: float = 0.2
     # Number of context augmentations applied per batch
     n_augmentations: int = 40
     # Number of wake-sleep cycles
@@ -196,6 +196,18 @@ class SleepMechanismParams(DictConfig):
     max_seq_length: int = 128
     # Whether to apply contextualization during sleep
     contextualize_sleep: bool = True
+    # === Utility replay (Gain x Need) params, only used when replay_strategy == "utility" ===
+    # Temperature for softmax over per-sample squared gradient norms (Gain).
+    utility_temperature_gain: float = 1.0
+    # Temperature for softmax over k-NN density scores (Need).
+    utility_temperature_need: float = 1.0
+    # k for k-NN density computation in Need.
+    need_knn_k: int = 50
+    # Number of trailing transformer layers to mean-pool for embedding extraction.
+    need_embedding_layers: int = 4
+    # === Plasticity decay ===
+    plasticity_decay: Optional[PlasticityDecayParams] = None
+
 
 ### Container for entire config ###
 
@@ -208,8 +220,6 @@ class BabyLMConfig(DictConfig):
     data_preprocessing: DataPreprocessingParams
     model: ModelParams
     trainer: TrainerParams
-    objective_curriculum: ObjectiveCurriculumParams
-    data_curriculum: Optional[DataCurriculumParams] = None
-    vocabulary_curriculum: Optional[VocabularyCurriculumParams] = None
+    task: TaskParams
 
     sleep_mechanism: Optional[SleepMechanismParams] = None
