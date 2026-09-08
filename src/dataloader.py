@@ -62,11 +62,14 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
             
         mlm = self.config.task.task == "mlm"
 
+        sleep_cfg = getattr(self.config, "sleep_mechanism", None)
+        max_seq_length = getattr(sleep_cfg, "max_seq_length", 128) if sleep_cfg else 128
         self._collate_fn = SleepCollatorForLanguageModeling(
             sampler=loader.sampler,
             tokenizer=loader.tokenizer,
             mlm=mlm,
-            mlm_probability=self.config.task.optional_kwargs['mask_probability'] if mlm else None
+            mlm_probability=self.config.task.optional_kwargs['mask_probability'] if mlm else None,
+            max_seq_length=max_seq_length,
         )
         self._dataset_fetcher = _DatasetKind.create_fetcher(
             self._dataset_kind,
@@ -108,9 +111,12 @@ class _SleepSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         return data
     
 class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
-    def __init__(self, sampler, *args, **kwargs):
+    def __init__(self, sampler, *args, max_seq_length: int = 128, **kwargs):
         super().__init__(*args, **kwargs)
         self.sampler = sampler
+        # Chunk length used when the replay buffer is repacked during SLEEP;
+        # threaded from SleepMechanismParams.max_seq_length by the dataloader.
+        self.max_seq_length = max_seq_length
         
     def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]], *args, **kwargs) -> Dict[str, Any]:
         if self.sampler.phase == "SLEEP":
@@ -131,8 +137,10 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
     def context_augment(
             self,
             examples: List[List[int]],
-            max_seq_length: int = 128
-        ) -> Dict[str, torch.Tensor]:
+            max_seq_length: Optional[int] = None,
+        ) -> List[Dict[str, List[int]]]:
+        if max_seq_length is None:
+            max_seq_length = self.max_seq_length
         # print("examples to contextualize:", examples)
         
         pad_token_id = self.tokenizer.pad_token_id
@@ -169,16 +177,19 @@ class SleepCollatorForLanguageModeling(DataCollatorForLanguageModeling):
                 chunks.append({"input_ids": current_chunk})
                 current_chunk = [cls_token_id]
         
-        # finalize last chunk
-        if len(current_chunk) > 0:
+        # finalize last chunk. A chunk holding only the leading <s> (exact fill
+        # of the previous chunk, or no content at all) carries no target and is
+        # dropped rather than emitted as <s> + pads.
+        if len(current_chunk) > 1:
             if len(current_chunk) < max_seq_length:
                 padding_len = max_seq_length - len(current_chunk)
                 current_chunk.extend([pad_token_id] * padding_len)
             chunks.append({"input_ids": current_chunk})
-        
-        # if no valid chunks created, return single padded chunk
+
+        # if no valid chunks created, return a single padded chunk so the batch
+        # keeps its shape (all labels are ignored by the collator).
         if len(chunks) == 0:
-            chunks = [[cls_token_id] + [pad_token_id] * (max_seq_length - 1)]
+            chunks = [{"input_ids": [cls_token_id] + [pad_token_id] * (max_seq_length - 1)}]
         
         # convert to tensors
         # input_ids_tensor = torch.tensor(chunks, dtype=torch.long)

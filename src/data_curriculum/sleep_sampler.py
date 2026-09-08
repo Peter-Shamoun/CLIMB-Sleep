@@ -277,8 +277,7 @@ class SleepSampler(Sampler):
                     candidate_indices, size=num_replay, replace=False
                 )
             )
-        if self.contextualize_sleep:
-            self.contextualized_chunks = self.contextualize_buffer()
+        # Contextualization happens once, in switch_phase("SLEEP").
 
     def get_wake_max_steps(self):
         """

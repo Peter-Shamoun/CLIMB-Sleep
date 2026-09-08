@@ -1,0 +1,33 @@
+# Tiny read/prune pod for a PVC when none of our training pods is up.
+# Render __PVC__ (scl-replay-experiments-2 | scl-replay-experiments-pvc) and
+# __TAG__ (any short suffix), then:
+#   kubectl create -f <rendered>.yaml -n dsc-capstone-25-26
+#   kubectl cp scripts/k8s/pvc_tools.sh dsc-capstone-25-26/sh-pvc-__TAG__:/mnt/data/pvc_tools.sh
+#   kubectl exec sh-pvc-__TAG__ -n dsc-capstone-25-26 -- sh /mnt/data/pvc_tools.sh df
+#   kubectl delete pod sh-pvc-__TAG__ -n dsc-capstone-25-26
+# The pod sleeps for 2 h and then exits on its own.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sh-pvc-__TAG__
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 7200
+  containers:
+  - name: inspect
+    image: busybox:1.36
+    command: ["sh", "-c", "sleep 7200"]
+    volumeMounts:
+    - mountPath: /mnt/data
+      name: storage-volume
+    resources:
+      limits:
+        memory: 128Mi
+        cpu: 200m
+      requests:
+        memory: 128Mi
+        cpu: 200m
+  volumes:
+  - name: storage-volume
+    persistentVolumeClaim:
+      claimName: __PVC__

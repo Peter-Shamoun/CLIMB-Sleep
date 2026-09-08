@@ -90,16 +90,12 @@ def test_sleep_collator_repacks_buffer_into_cls_led_chunks_without_cross_chunk_t
         ex.append({"input_ids": toks})
     batch = col.torch_call(ex)
     ids, labels = batch["input_ids"], batch["labels"]
-    # 3 x 127 content tokens repack into 3 full chunks of 128 with a leading
-    # <s>. Quirk: because the packer opens a new [<s>] chunk after every full
-    # one, an exact fill leaves a trailing all-pad chunk (<s> + 127 pads),
-    # which carries no loss (labels -100) but occupies a batch slot.
-    assert ids.shape in ((3, L), (4, L))
+    # 3 x 127 content tokens repack into exactly 3 full chunks of 128 with a
+    # leading <s>; the exact fill must not leave a trailing <s>+pads chunk.
+    assert ids.shape == (3, L)
     assert (ids[:, 0] == CLS).all()
     assert (ids[:, 1:] != CLS).all()
-    assert not (ids[:3] == PAD).any() and not (labels[:3] == -100).any()
-    if ids.shape[0] == 4:
-        assert (ids[3, 1:] == PAD).all() and (labels[3, 1:] == -100).all()
+    assert not (ids == PAD).any() and not (labels == -100).any()
     # Content order is preserved across the concatenation, so the only
     # "boundary" a next-token target crosses is the same sentence boundary
     # the wake packing already contains; chunk k+1 restarts from <s>.
@@ -119,6 +115,33 @@ def test_sleep_collator_pads_only_the_last_chunk(tokenizer):
     assert n_pad == 128 - 1 - 60
     assert int((labels[1] == -100).sum()) == n_pad
     assert (labels[1][ids[1] == PAD] == -100).all()
+
+
+def test_sleep_collator_exact_fill_emits_no_padding_only_chunk(tokenizer):
+    col = _collator(tokenizer, "SLEEP")
+    # 2 x 127 content tokens = exactly two chunks; a third chunk would be <s>+pads.
+    ex = [{"input_ids": [CLS] + [10] * 127}, {"input_ids": [CLS] + [11] * 127}]
+    batch = col.torch_call(ex)
+    assert batch["input_ids"].shape == (2, 128)
+    assert not (batch["input_ids"] == PAD).any()
+
+
+def test_sleep_collator_returns_one_padded_chunk_for_empty_content(tokenizer):
+    col = _collator(tokenizer, "SLEEP")
+    batch = col.torch_call([{"input_ids": [CLS, PAD, PAD]}])
+    ids, labels = batch["input_ids"], batch["labels"]
+    assert ids.shape == (1, 128)
+    assert ids[0, 0] == CLS and (ids[0, 1:] == PAD).all()
+    assert (labels[0, 1:] == -100).all()
+
+
+def test_sleep_collator_honours_configured_max_seq_length(tokenizer):
+    sampler = SimpleNamespace(phase="SLEEP")
+    col = SleepCollatorForLanguageModeling(sampler=sampler, tokenizer=tokenizer, mlm=False, max_seq_length=16)
+    ex = [{"input_ids": [CLS] + [10] * 30}]
+    batch = col.torch_call(ex)
+    assert batch["input_ids"].shape == (2, 16)
+    assert batch["input_ids"][1, 0] == CLS and int((batch["input_ids"] == PAD).sum()) == 0
 
 
 class _Dataset:
@@ -158,3 +181,28 @@ def test_strict_buffer_grows_with_all_seen_folds_and_keeps_stale_high_loss_sampl
     # Every cycle-0 pick is re-selected in cycle 1 (10 * 0.95 > 1.0).
     assert first_buffer <= set(s.replay_buffer)
     assert all(i in fold0 for i in s.replay_buffer)
+
+
+def test_contextualize_buffer_runs_once_per_wake_to_sleep_switch(monkeypatch):
+    n, phases = 100, 5
+    s = SleepSampler(_Dataset(n), batch_size=10, replay_ratio=0.2, n_phases=phases,
+                     n_augmentations=3, decay_rate=0.05, min_decay_factor=0.2,
+                     contextualize_sleep=True, replay_strategy="strict")
+    calls = []
+    original = s.contextualize_buffer
+
+    def counting():
+        calls.append(1)
+        return original()
+
+    monkeypatch.setattr(s, "contextualize_buffer", counting)
+    fold0 = list(s.folds[0])
+    s.add_to_candidates(fold0, [1.0] * len(fold0))
+    s.switch_phase("SLEEP")
+    assert len(calls) == 1
+    assert len(s.contextualized_chunks) == 3 * len(s.replay_buffer)
+    s.switch_phase("WAKE")
+    fold1 = list(s.folds[1])
+    s.add_to_candidates(fold1, [1.0] * len(fold1))
+    s.switch_phase("SLEEP")
+    assert len(calls) == 2
