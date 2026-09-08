@@ -45,9 +45,11 @@ if [ -z "$pvc_pod" ]; then
     pvc_pod=$(printf '%s\n' "$all_pods" | grep "^$OUR_PREFIX" | grep -w Running | awk '{print $1}' | head -1)
 fi
 if [ -n "$pvc_pod" ]; then
+    # busybox wraps long device names onto their own line; take the free
+    # column relative to the end of the last line (Avail Use% Mounted).
     free_line=$(kubectl exec "$pvc_pod" -n "$NS" -- df -k /mnt/data 2>/dev/null | tail -1)
     if [ -n "$free_line" ]; then
-        free_kb=$(printf '%s' "$free_line" | awk '{print $4}')
+        free_kb=$(printf '%s' "$free_line" | awk '{print $(NF-2)}')
         free_gb=$((free_kb / 1024 / 1024))
         echo "pvc (via $pvc_pod): ${free_gb} GB free (min $MIN_FREE_GB)"
         if [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
