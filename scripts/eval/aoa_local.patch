@@ -1,0 +1,103 @@
+diff --git a/evaluation_pipeline/AoA_word/eval_util.py b/evaluation_pipeline/AoA_word/eval_util.py
+index 181cae9..5101ecd 100644
+--- a/evaluation_pipeline/AoA_word/eval_util.py
++++ b/evaluation_pipeline/AoA_word/eval_util.py
+@@ -25,8 +25,18 @@ class StepConfig:
+         track: str = "non-strict-small",
+         debug: bool = False,
+         file_path: Path | None = None,
++        steps_json: Path | None = None,
+     ) -> None:
+-        self.steps, self.word_counts = self.generate_checkpoint_steps(track)
++        # Local checkpoints: steps_json = [{"name", "path", "word_count"}, ...]
++        # replaces the hub revision names (chck_<N>M) with directories.
++        self.paths: dict[str, str] = {}
++        if steps_json is not None:
++            entries = JsonProcessor.load_json(Path(steps_json))
++            self.steps = [e["name"] for e in entries]
++            self.word_counts = [int(e["word_count"]) for e in entries]
++            self.paths = {e["name"]: str(e["path"]) for e in entries}
++        else:
++            self.steps, self.word_counts = self.generate_checkpoint_steps(track)
+ 
+         if debug:
+             self.steps = self.steps[:5]
+diff --git a/evaluation_pipeline/AoA_word/evaluation_functions.py b/evaluation_pipeline/AoA_word/evaluation_functions.py
+index 5554ee1..2817589 100644
+--- a/evaluation_pipeline/AoA_word/evaluation_functions.py
++++ b/evaluation_pipeline/AoA_word/evaluation_functions.py
+@@ -50,20 +50,29 @@ class StepSurprisalExtractor:
+         if isinstance(self.model_cache_dir, str):
+             self.model_cache_dir = Path(self.model_cache_dir)
+ 
++    def _source_for_step(self, step) -> tuple[str, str | None]:
++        """(model path or hub name, revision). Local checkpoint dirs listed in
++        StepConfig.paths (steps_json) are loaded without a revision."""
++        paths = getattr(self.config, "paths", {}) or {}
++        if step in paths:
++            return paths[step], None
++        return self.model_name, step
++
+     def load_model_for_step(self, step: int) -> AutoModelForCausalLM:
+         """Load model and tokenizer for a specific step."""
++        src, revision = self._source_for_step(step)
+         try:
+             if self.backend in ["mlm", "mntp"]:
+                 model = AutoModelForMaskedLM.from_pretrained(
+-                    self.model_name, trust_remote_code=True, revision=step
++                    src, trust_remote_code=True, revision=revision
+                 )
+             elif self.backend == "causal":
+                 model = AutoModelForCausalLM.from_pretrained(
+-                    self.model_name, trust_remote_code=True, revision=step
++                    src, trust_remote_code=True, revision=revision
+                 )
+             elif self.backend in ["enc_dec_mask", "enc_dec_prefix"]:
+                 model = AutoModelForSeq2SeqLM.from_pretrained(
+-                    self.model_name, trust_remote_code=True, revision=step
++                    src, trust_remote_code=True, revision=revision
+                 )
+             else:
+                 raise f"The backend {self.backend} is not implemented, please implemented yourself or raise an issue on the GitHub!"
+@@ -75,12 +84,13 @@ class StepSurprisalExtractor:
+         return model
+ 
+     def load_tokenizer_for_step(self, step: int) -> AutoProcessor:
++        src, revision = self._source_for_step(step)
+         try:
+             processor = AutoProcessor.from_pretrained(
+-                self.model_name,
++                src,
+                 trust_remote_code=True,
+                 padding_side="right",
+-                revision=step,
++                revision=revision,
+             )
+             tokenizer = (
+                 processor.tokenizer if hasattr(processor, "tokenizer") else processor
+diff --git a/evaluation_pipeline/AoA_word/run.py b/evaluation_pipeline/AoA_word/run.py
+index 514e896..546547d 100755
+--- a/evaluation_pipeline/AoA_word/run.py
++++ b/evaluation_pipeline/AoA_word/run.py
+@@ -70,6 +70,13 @@ def parse_args() -> argparse.Namespace:
+         type=int,
+         help="Minimum number of contexts for a given word to be evaluated"
+     )
++    parser.add_argument(
++        "--steps_json",
++        type=Path,
++        default=None,
++        help="JSON list of {name, path, word_count}: evaluate these local checkpoint "
++        "directories instead of hub revisions named by track",
++    )
+     return parser.parse_args()
+ 
+ 
+@@ -119,6 +126,7 @@ def main() -> None:
+         track=args.track_name,
+         file_path=resume_file,
+         debug=args.debug,
++        steps_json=args.steps_json,
+     )
+ 
+     extractor = StepSurprisalExtractor(

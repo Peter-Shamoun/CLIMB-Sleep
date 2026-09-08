@@ -8,10 +8,13 @@
 #                 <run>/lm_model/. Use this for every run whose lm_model/ was
 #                 exported before the head fix (all CLM runs up to Sep 6 2026).
 # SOURCE=lm_model: evaluate <run>/lm_model/ as is (May 2026 MLM runs).
-# MODE=fast | full : eval_zero_shot_fast.sh (fast_eval) or eval_zero_shot.sh
-#                 (full BLiMP etc.); results land under
-#                 /mnt/data/eval_outputs/<run>/<step>/zero_shot/<backend>/ (fast)
-#                 or .../<run>/<step>_full/zero_shot/<backend>/ (full).
+# MODE=fast | full | aoa : eval_zero_shot_fast.sh (fast_eval), eval_zero_shot.sh
+#                 (full BLiMP etc.), or the AoA_word surprisal extraction over
+#                 EVERY checkpoint of the run (scripts/eval/aoa_local.patch +
+#                 aoa_prepare.py; ignores SOURCE). Results land under
+#                 /mnt/data/eval_outputs/<run>/<step>/zero_shot/<backend>/ (fast),
+#                 .../<run>/<step>_full/zero_shot/<backend>/ (full), or
+#                 .../<run>/aoa/.../AoA_word/surprisal.json + aoa_steps.json (aoa).
 # Placeholders: __TAG__, __PODS__, __RUNS__ (space-separated run names),
 # __BACKEND__ (causal|mlm), __MODE__, __SOURCE__, __PVC__, tokens as usual.
 # Never commit a rendered copy.
@@ -79,6 +82,20 @@ spec:
               ckpt=$(ls -d $B/$RUN/checkpoint-* 2>/dev/null | sed 's#.*checkpoint-##' | sort -n | tail -1)
               [ -z "$ckpt" ] && ckpt=0
               mkdir -p $EVAL_OUT/$RUN
+              if [ "$MODE" = "aoa" ]; then
+                if [ ! -f $P/.aoa_patched ]; then
+                  git -C $P apply $(pwd)/scripts/eval/aoa_local.patch && touch $P/.aoa_patched
+                fi
+                S=/tmp/aoa_$RUN; rm -rf $S
+                python scripts/eval/aoa_prepare.py $B/$RUN $S
+                cp $S/steps.json $EVAL_OUT/$RUN/aoa_steps.json
+                (cd $P && python -m evaluation_pipeline.AoA_word.run --model_name $S --backend $BACKEND \
+                  --track_name strict-small --word_path evaluation_data/full_eval/aoa/cdi_childes.json \
+                  --output_dir $EVAL_OUT/$RUN/aoa --steps_json $S/steps.json) 2>&1 | tee $EVAL_OUT/$RUN/aoa.log
+                rm -rf $S
+                echo "=== DONE $RUN aoa"
+                i=$((i+1)); continue
+              fi
               if [ "$SOURCE" = "ckpt" ]; then
                 M=/tmp/m_$RUN; rm -rf $M; mkdir -p $M
                 cp $B/$RUN/checkpoint-$ckpt/config.json $B/$RUN/checkpoint-$ckpt/model.safetensors $M/
