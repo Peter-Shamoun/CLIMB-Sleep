@@ -166,6 +166,7 @@ spec:
                 - hcc-chase-shor-c4705.unl.edu
                 - k8s-chase-ci-07.calit2.optiputer.net
                 - hcc-nrp-shor-c6017.unl.edu
+                - hcc-chase-shor-c4709.unl.edu
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
