@@ -84,11 +84,20 @@ spec:
               ckpt=$(ls -d $B/$RUN/checkpoint-* 2>/dev/null | sed 's#.*checkpoint-##' | sort -n | tail -1)
               [ -z "$ckpt" ] && ckpt=0
               mkdir -p $EVAL_OUT/$RUN
+              # The pipeline names its results dir Path(model).stem, which strips
+              # ".1_0" from run names with dots; stage under a dot-free name.
+              SAFE=$(echo "$RUN" | tr . _)
+              if [ "$MODE" = "full" ] && [ -d $EVAL_OUT/$RUN/${ckpt}_full/zero_shot/$BACKEND/reading ]; then
+                echo "=== SKIP $RUN (full results present)"; i=$((i+1)); continue
+              fi
+              if [ "$MODE" = "fast" ] && [ -d $EVAL_OUT/$RUN/$ckpt/zero_shot/$BACKEND/reading ]; then
+                echo "=== SKIP $RUN (fast results present)"; i=$((i+1)); continue
+              fi
               if [ "$MODE" = "aoa" ]; then
                 if [ ! -f $P/.aoa_patched ]; then
                   git -C $P apply $(pwd)/scripts/eval/aoa_local.patch && touch $P/.aoa_patched
                 fi
-                S=/tmp/aoa_$RUN; rm -rf $S
+                S=/tmp/aoa_$SAFE; rm -rf $S
                 python scripts/eval/aoa_prepare.py $B/$RUN $S
                 cp $S/steps.json $EVAL_OUT/$RUN/aoa_steps.json
                 (cd $P && python -m evaluation_pipeline.AoA_word.run --model_name $S --backend $BACKEND \
@@ -99,7 +108,7 @@ spec:
                 i=$((i+1)); continue
               fi
               if [ "$SOURCE" = "ckpt" ]; then
-                M=/tmp/m_$RUN; rm -rf $M; mkdir -p $M
+                M=/tmp/m_$SAFE; rm -rf $M; mkdir -p $M
                 cp $B/$RUN/checkpoint-$ckpt/config.json $B/$RUN/checkpoint-$ckpt/model.safetensors $M/
                 cp $B/$RUN/checkpoint-$ckpt/generation_config.json $M/ 2>/dev/null || true
                 cp $B/$RUN/lm_model/tokenizer.json $B/$RUN/lm_model/tokenizer_config.json $M/
@@ -110,8 +119,8 @@ spec:
               if [ "$MODE" = "full" ]; then
                 (cd $P && ./eval_zero_shot.sh $M $BACKEND) 2>&1 | tee $EVAL_OUT/$RUN/${ckpt}_full.log
                 mkdir -p $EVAL_OUT/$RUN/${ckpt}_full
-                cp -r $P/results/$(basename $M)/main/zero_shot $EVAL_OUT/$RUN/${ckpt}_full/
-                rm -rf $P/results/$(basename $M)
+                cp -r $P/results/*/main/zero_shot $EVAL_OUT/$RUN/${ckpt}_full/ || echo "WARN: no results dir to copy for $RUN"
+                rm -rf $P/results/*
               else
                 (cd $P && ./eval_zero_shot_fast.sh $M $EVAL_OUT/$RUN/$ckpt $BACKEND) 2>&1 | tee $EVAL_OUT/$RUN/$ckpt.log
               fi
