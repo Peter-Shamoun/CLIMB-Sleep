@@ -178,6 +178,12 @@ class SleepMechanismParams(DictConfig):
     # Ratio of total sleep steps to total wake steps
     # If negative, training length is determined by max_training_steps
     sleep_wake_ratio: float = -1.0
+    # Bounded-repeat sleep: when > 0, each sleep phase lasts
+    # ceil(replay_repeats * buffer_size / batch_size) steps so every buffer
+    # sample is replayed this many times per cycle, instead of a fixed length
+    # that over-replays small early buffers (see src/utils/sleep_schedule.py).
+    # Overrides sleep_wake_ratio for the step budget. -1 keeps the fixed length.
+    replay_repeats: float = -1.0
     # Percentage/Fraction/Ratio of high-loss samples to keep (0.1 for top 10%)
     replay_ratio: float = 0.1
     # How to select samples from replay buffer. Choose from random, weighted, strict, or utility.

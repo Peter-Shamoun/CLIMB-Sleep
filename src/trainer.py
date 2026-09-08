@@ -54,6 +54,7 @@ from src.synaptic_homeostasis import (
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
 from src.utils.replay_score import per_sample_mean_token_loss
+from src.utils.sleep_schedule import sleep_steps_for_buffer
 from src.utils.per_sample_grad import (
     per_sample_grads,
     per_sample_squared_grad_norms,
@@ -122,6 +123,15 @@ class CustomTrainer(Trainer):
 
         self.sleep_mechanism_cfg = hydra_config.sleep_mechanism
         self.max_steps_per_phase = max_steps_per_phase
+        # Bounded-repeat sleep (see src/utils/sleep_schedule.py): when > 0 the
+        # SLEEP entry of max_steps_per_phase is re-sized at every WAKE->SLEEP
+        # switch from the realized replay buffer.
+        self.replay_repeats = (
+            float(getattr(self.sleep_mechanism_cfg, "replay_repeats", -1.0))
+            if self.sleep_mechanism_cfg
+            else -1.0
+        )
+        self._sleep_batch_size = args.per_device_train_batch_size
 
         # Plasticity decay state (Method 2: online empirical Fisher protection).
         # Synaptic-Intelligence-style: Fisher is accumulated during wake at the
@@ -812,6 +822,16 @@ class CustomTrainer(Trainer):
             self.fisher_sample_count = 0
             self._last_wake_batch = None
 
+    def _sleep_steps_for_next_phase(self, sampler) -> int:
+        """Length of the sleep phase that starts now. Fixed (config budget)
+        unless replay_repeats > 0, in which case every buffer sample is
+        replayed replay_repeats times: ceil(repeats * buffer / batch)."""
+        if self.replay_repeats > 0:
+            return sleep_steps_for_buffer(
+                len(sampler.replay_buffer), self.replay_repeats, self._sleep_batch_size
+            )
+        return self.max_steps_per_phase["SLEEP"]
+
     def _swap_phase(self, sampler: SleepSampler, phase: str, next_phase: str):
         logger.info("Ending %s phase...", phase)
         phase_wall_sec = (
@@ -883,6 +903,8 @@ class CustomTrainer(Trainer):
             logger.info("Contextualize?: %s", sampler.contextualize_sleep)
             logger.info("num candidates: %d", len(sampler.wake_candidates))
             logger.info("Replay Buffer Size: %d", len(sampler.replay_buffer))
+            self.max_steps_per_phase["SLEEP"] = self._sleep_steps_for_next_phase(sampler)
+            logger.info("Sleep steps this phase: %d", self.max_steps_per_phase["SLEEP"])
             diag = getattr(sampler, "last_utility_diagnostics", None)
             if diag is not None:
                 self.log({f"utility/{k}": v for k, v in diag.items()})
@@ -903,6 +925,8 @@ class CustomTrainer(Trainer):
             "time/per_sample_grad_sec": self._sh_time_sec["per_sample_grad"],
             "time/sh_score_sec": self._sh_time_sec["score"],
             "time/sh_shrink_sec": self._sh_time_sec["shrink"],
+            "sleep/steps_per_phase": self.max_steps_per_phase["SLEEP"],
+            "sleep/buffer_size": len(sampler.replay_buffer),
         }
         timing["time/sh_total_sec"] = (
             timing["time/sh_score_sec"] + timing["time/sh_shrink_sec"]

@@ -11,6 +11,8 @@
 set -eu
 
 ROOT="${PVC_ROOT:-/mnt/data}"
+# train.py writes runs to <output_dir>/checkpoints/<wandb project>/<run name>
+RUNS_GLOB="$ROOT/checkpoints/*"
 ALLOWED_PREFIXES="sh_expmt_ baseline_clm_ rr_expmt_ sh-"
 
 usage_() {
@@ -34,7 +36,7 @@ case "$cmd" in
         ;;
     usage)
         # one line per run directory, MB, largest first
-        for d in "$ROOT"/*/; do
+        for d in $RUNS_GLOB/*/; do
             [ -d "$d" ] || continue
             du -sm "$d" 2>/dev/null
         done | sort -rn
@@ -48,7 +50,7 @@ case "$cmd" in
         fi
         dry=0
         [ "$cmd" = "prune-dry" ] && dry=1
-        for run in "$ROOT"/"$prefix"*/; do
+        for run in $RUNS_GLOB/"$prefix"*/; do
             [ -d "$run" ] || continue
             # a run is finished when its final lm_model/ export exists at the top
             # level; unfinished runs keep everything so they can resume.

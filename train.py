@@ -26,6 +26,7 @@ from src.tokenizer import load_tokenizer
 from src.trainer import CustomTrainer
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
+from src.utils.sleep_schedule import step_budget
 
 # type-checks dynamic config file
 cs = ConfigStore.instance()
@@ -142,31 +143,28 @@ def main(cfg: BabyLMConfig):
     max_training_steps = cfg.trainer.max_training_steps
     max_steps_per_phase = {}
     if cfg.sleep_mechanism:
-        total_wake_steps = min(
-            cfg.sleep_mechanism.wake_block_steps * cfg.sleep_mechanism.n_phases,
-            math.ceil(len(train_dataset) / cfg.trainer.batch_size)
+        replay_repeats = float(getattr(cfg.sleep_mechanism, "replay_repeats", -1.0))
+        budget = step_budget(
+            n_train=len(train_dataset),
+            batch_size=cfg.trainer.batch_size,
+            n_phases=cfg.sleep_mechanism.n_phases,
+            wake_block_steps=cfg.sleep_mechanism.wake_block_steps,
+            sleep_wake_ratio=cfg.sleep_mechanism.sleep_wake_ratio,
+            max_training_steps=max_training_steps,
+            replay_ratio=cfg.sleep_mechanism.replay_ratio,
+            replay_repeats=replay_repeats,
         )
-        wake_steps_per_phase = math.ceil(total_wake_steps / cfg.sleep_mechanism.n_phases)
-        
-        # Set according to ratio
-        if cfg.sleep_mechanism.sleep_wake_ratio > 0:
-            sleep_max_steps_per_phase = (
-                wake_steps_per_phase
-                * cfg.sleep_mechanism.sleep_wake_ratio
+        total_wake_steps = budget["total_wake_steps"]
+        wake_steps_per_phase = budget["wake_steps_per_phase"]
+        # Under bounded repeats this is the FIRST sleep phase; the trainer
+        # re-sizes every later one from the realized buffer.
+        sleep_max_steps_per_phase = budget["sleep_steps_per_phase"]
+        max_training_steps = budget["max_training_steps"]
+        if replay_repeats > 0:
+            logger.info(
+                "Bounded-repeat sleep: %.2f repeats per buffer sample, %d total sleep steps"
+                % (replay_repeats, budget["total_sleep_steps"])
             )
-            total_sleep_steps = sleep_max_steps_per_phase * cfg.sleep_mechanism.n_phases
-            max_training_steps = total_wake_steps + total_sleep_steps
-            
-        # Set according to max steps
-        else:
-            total_sleep_steps = max_training_steps - total_wake_steps
-            sleep_max_steps_per_phase = (
-                math.ceil(total_sleep_steps / cfg.sleep_mechanism.n_phases)
-            )
-        # convert all to integers    
-        sleep_max_steps_per_phase = int(sleep_max_steps_per_phase)
-        wake_steps_per_phase = int(wake_steps_per_phase)
-        max_training_steps = int(max_training_steps)
         
         if sleep_max_steps_per_phase < 1:
             min_steps = (total_wake_steps

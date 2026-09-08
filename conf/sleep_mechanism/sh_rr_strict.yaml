@@ -1,0 +1,22 @@
+# Bounded-repeat sleep, STRICT arm. Same regime as sh_off.yaml (TQ's
+# loss/strict/0.1 CLM cell) except that each sleep phase lasts
+# ceil(3.5 * buffer / 32) steps, so every buffer sample is replayed 3.5 times
+# in every cycle instead of 90/k times in cycle k (Experiment 5, over-replay).
+# The wake phase draws 688 x 32 = 22,016 indices from a 22,012-sample fold, so
+# the candidate pool grows by a full fold per cycle and the buffer in cycle k
+# is int(k * 22,012 * 0.1). 3.5 keeps the total budget within 1% of the
+# fixed-length cells (341.3k vs 343,994 steps): sleep phase 1 has 241 steps,
+# phase 50 has 12,038. If the realized total falls a few steps short of max_steps the
+# trainer wraps into fold 0 for the remainder (harmless).
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 9.0 # unused for the budget when replay_repeats > 0
+replay_repeats: 3.5
+replay_ratio: 0.1
+replay_strategy: "strict"
+replay_criteria: "loss"
+replay_decay_rate: 0.05334773969181028
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
