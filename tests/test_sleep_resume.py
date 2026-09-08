@@ -8,6 +8,7 @@ the same indices as the original, the trainer-level helpers restore
 phase_steps and the per-phase sleep length, and the Job-side helper picks
 only complete checkpoints.
 """
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ from src.utils.sleep_state import (  # noqa: E402
     latest_resumable_checkpoint,
     load_sleep_state,
     save_sleep_state,
+    training_already_complete,
     trainer_sleep_state,
 )
 
@@ -177,3 +179,17 @@ def test_resume_overrides_need_run_id_and_a_complete_checkpoint(tmp_path):
     expected = f"experiment.resume_checkpoint_path={run / 'checkpoint-50'} experiment.resume_run_id=abc123"
     assert resume_overrides(str(run)) == expected
     assert resume_overrides(str(run), auto_resume="0") == ""
+
+
+def test_a_checkpoint_at_max_steps_means_training_is_complete(tmp_path):
+    """Sep 7 2026: a container restarted after training finished resumed from
+    the final checkpoint and trainer.train() raised on its first step, so the
+    Job crash-looped. train.py must skip training in that case."""
+    ck = tmp_path / "checkpoint-750"
+    ck.mkdir()
+    assert training_already_complete(str(ck), 750) is False  # no trainer_state.json yet
+    (ck / "trainer_state.json").write_text(json.dumps({"global_step": 750}))
+    assert training_already_complete(str(ck), 750) is True
+    assert training_already_complete(str(ck), 751) is False
+    (ck / "trainer_state.json").write_text(json.dumps({"global_step": 375}))
+    assert training_already_complete(str(ck), 750) is False

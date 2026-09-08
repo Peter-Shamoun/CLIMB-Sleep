@@ -27,7 +27,9 @@ spec:
   completions: __PODS__
   parallelism: __PODS__
   completionMode: Indexed
-  backoffLimit: 6
+  # UnexpectedAdmissionError pods count as failures; 6 was exhausted by two
+  # bad nodes on Sep 7 and the Job then killed its healthy pods.
+  backoffLimit: 20
   ttlSecondsAfterFinished: 86400
   template:
     spec:

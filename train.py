@@ -27,6 +27,7 @@ from src.trainer import CustomTrainer
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
 from src.utils.sleep_schedule import step_budget
+from src.utils.sleep_state import training_already_complete
 
 # type-checks dynamic config file
 cs = ConfigStore.instance()
@@ -243,9 +244,16 @@ def main(cfg: BabyLMConfig):
         max_steps_per_phase = max_steps_per_phase
         # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
     )
-    if not cfg.experiment.resume_checkpoint_path:
-        trainer.evaluate()  # Initial model evaluation
-    trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
+    resume_path = cfg.experiment.resume_checkpoint_path
+    if resume_path and training_already_complete(resume_path, max_training_steps):
+        # Restarted after training finished (e.g. the final eval crashed):
+        # load the final weights and skip straight to the evaluation below.
+        logger.info("Checkpoint %s is at max_steps %d; skipping training", resume_path, max_training_steps)
+        trainer._load_from_checkpoint(resume_path)
+    else:
+        if not resume_path:
+            trainer.evaluate()  # Initial model evaluation
+        trainer.train(resume_from_checkpoint=resume_path)
 
     logger.info("Training complete!")
     

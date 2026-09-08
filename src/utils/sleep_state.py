@@ -13,6 +13,7 @@ touch so they can be tested with a SimpleNamespace. Serialization is
 torch.save of a plain dict of scalars and numpy arrays.
 """
 import glob
+import json
 import os
 import re
 from typing import Any, Dict, Optional
@@ -23,6 +24,28 @@ SLEEP_STATE_FILE = "sleep_state.pt"
 # HF writes rng_state.pth after the optimizer and scheduler in
 # _save_checkpoint, so its presence means the checkpoint is complete.
 COMPLETE_MARKER = "rng_state.pth"
+
+
+def checkpoint_global_step(ckpt_dir: str) -> Optional[int]:
+    """global_step recorded in HF's trainer_state.json inside a checkpoint."""
+    p = os.path.join(ckpt_dir, "trainer_state.json")
+    if not os.path.exists(p):
+        return None
+    with open(p) as f:
+        try:
+            return int(json.load(f).get("global_step"))
+        except (TypeError, ValueError):
+            return None
+
+
+def training_already_complete(ckpt_dir: str, max_steps: int) -> bool:
+    """True when the checkpoint we would resume from already sits at
+    max_steps. A container restarted after training finished (Sep 7 2026: the
+    resume smoke crash-looped because the final checkpoint was picked up and
+    trainer.train() raises on its first step) must skip training and go
+    straight to the final evaluation."""
+    step = checkpoint_global_step(ckpt_dir)
+    return step is not None and step >= max_steps
 
 
 def trainer_sleep_state(trainer: Any, sampler_state: Optional[dict]) -> Dict[str, Any]:
