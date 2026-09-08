@@ -12,6 +12,10 @@
 #                        complete checkpoints, so the run can still resume from
 #                        its latest checkpoint while older ones stop holding
 #                        ~130 MB each. prune-running-dry prints only.
+#   ... prune-models <prefix>  for FINISHED runs: delete model.safetensors from
+#                        every checkpoint except the highest one (43 MB each on
+#                        GPT-2 small). Per-checkpoint PPL is on W&B; only
+#                        per-checkpoint BabyLM evals need these. prune-models-dry.
 # The script is POSIX sh so it runs in busybox.
 set -eu
 
@@ -115,6 +119,37 @@ case "$cmd" in
                         echo "deleted: $victim"
                     fi
                 done
+            done
+        done
+        df -h "$ROOT"
+        ;;
+    prune-models|prune-models-dry)
+        prefix="${2:-}"
+        [ -n "$prefix" ] || usage_
+        if ! allowed "$prefix"; then
+            echo "refusing: prefix '$prefix' is not one of ours ($ALLOWED_PREFIXES)" >&2
+            exit 2
+        fi
+        dry=0
+        [ "$cmd" = "prune-models-dry" ] && dry=1
+        for run in $RUNS_GLOB/"$prefix"*/; do
+            [ -d "$run" ] || continue
+            if [ ! -d "$run/best_model" ]; then
+                echo "skip (not finished): $run"
+                continue
+            fi
+            last=$(ls -d "$run"checkpoint-* 2>/dev/null | sed 's/.*checkpoint-//' | sort -n | tail -1)
+            for ck in "$run"checkpoint-*/; do
+                step=$(basename "$ck" | sed 's/checkpoint-//')
+                [ "$step" = "$last" ] && continue
+                victim="$ck/model.safetensors"
+                [ -e "$victim" ] || continue
+                if [ "$dry" = 1 ]; then
+                    echo "would delete: $victim"
+                else
+                    rm -f "$victim"
+                    echo "deleted: $victim"
+                fi
             done
         done
         df -h "$ROOT"
