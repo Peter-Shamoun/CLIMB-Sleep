@@ -38,6 +38,8 @@ spec:
           value: "__SEED_OFFSET__"
         - name: GROUP
           value: "baseline-clm"
+        - name: AUTO_RESUME
+          value: "1"
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -56,8 +58,12 @@ spec:
           export SEED=$((JOB_COMPLETION_INDEX + 1 + SEED_OFFSET))
           export RUN_NAME=baseline_clm_${SEED}
           echo "Run: $RUN_NAME (seed=$SEED)"
+          # A restarted container (node death, OOM, full disk) continues from the
+          # last complete checkpoint on the PVC; set AUTO_RESUME=0 to start over.
+          RESUME_ARGS=$(python scripts/k8s/resume_args.py /mnt/data/checkpoints/sleep-consolidated-learning/$RUN_NAME)
+          echo "Resume args: ${RESUME_ARGS:-none}"
           python train.py sleep_mechanism=baseline_like_clm task=base_clm model=gpt2_small dataset=strict \
-            experiment.seed=$SEED experiment.name=$RUN_NAME experiment.group=$GROUP
+            experiment.seed=$SEED experiment.name=$RUN_NAME experiment.group=$GROUP $RESUME_ARGS
           echo "Finished Training!"
         volumeMounts:
         - mountPath: /mnt/data

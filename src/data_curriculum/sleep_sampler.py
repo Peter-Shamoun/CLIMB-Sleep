@@ -215,6 +215,65 @@ class SleepSampler(Sampler):
     def __len__(self):
         return len(self.dataset)
 
+    def state_dict(self) -> dict:
+        """Everything needed to resume mid-run (see src/utils/sleep_state.py).
+
+        contextualized_chunks is NOT stored (n_augmentations x buffer ints); a
+        resume inside a SLEEP phase re-contextualizes the same buffer, so the
+        remaining sleep steps replay it in a fresh order.
+        """
+        cand_idx = np.fromiter((int(i) for i in self.wake_candidates), dtype=np.int64, count=len(self.wake_candidates))
+        cand_score = np.fromiter((float(v[0]) for v in self.wake_candidates.values()), dtype=np.float64, count=len(self.wake_candidates))
+        cand_factor = np.fromiter((float(v[1]) for v in self.wake_candidates.values()), dtype=np.float64, count=len(self.wake_candidates))
+        return {
+            "phase": self.phase,
+            "curr_fold": int(self.curr_fold),
+            "wake_pos": int(self.wake_pos),
+            "sleep_pos": int(self.sleep_pos),
+            "n_phases": int(self.n_phases),
+            "dataset_indices": np.asarray(self.dataset_indices, dtype=np.int64),
+            "wake_candidates_idx": cand_idx,
+            "wake_candidates_score": cand_score,
+            "wake_candidates_factor": cand_factor,
+            "curr_wake_candidates": np.asarray([int(i) for i in self.curr_wake_candidates], dtype=np.int64),
+            "replay_buffer": np.asarray([int(i) for i in self.replay_buffer], dtype=np.int64),
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """Inverse of state_dict; rebuilds folds from the stored permutation."""
+        if int(state["n_phases"]) != self.n_phases:
+            raise ValueError(
+                f"checkpoint has n_phases={state['n_phases']}, config has {self.n_phases}"
+            )
+        self.dataset_indices = [int(i) for i in state["dataset_indices"]]
+        if len(self.dataset_indices) != len(self.dataset):
+            raise ValueError(
+                f"checkpoint permutation has {len(self.dataset_indices)} entries, dataset has {len(self.dataset)}"
+            )
+        self.fold_size = len(self.dataset_indices) // self.n_phases
+        self.folds = [
+            self.dataset_indices[i : i + self.fold_size]
+            for i in range(0, len(self.dataset_indices), self.fold_size)
+        ]
+        self.wake_candidates = {
+            int(i): (float(s), float(f))
+            for i, s, f in zip(
+                state["wake_candidates_idx"], state["wake_candidates_score"], state["wake_candidates_factor"]
+            )
+        }
+        self.curr_wake_candidates = [int(i) for i in state["curr_wake_candidates"]]
+        self.replay_buffer = [int(i) for i in state["replay_buffer"]]
+        self.phase = str(state["phase"])
+        self.curr_fold = int(state["curr_fold"])
+        self.wake_pos = int(state["wake_pos"])
+        self.sleep_pos = int(state["sleep_pos"])
+        self.wake_max_steps = self.get_wake_max_steps()
+        self.last_utility_diagnostics = None
+        if self.phase == "SLEEP" and self.contextualize_sleep and self.replay_buffer:
+            self.contextualized_chunks = self.contextualize_buffer()
+        else:
+            self.contextualized_chunks = []
+
     def contextualize_buffer(self) -> List[int]:
         """
         "Contextualizes" replay buffer before sleep phase to make it more abstract

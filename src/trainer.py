@@ -55,6 +55,13 @@ from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
 from src.utils.replay_score import per_sample_mean_token_loss
 from src.utils.sleep_schedule import sleep_steps_for_buffer
+from src.utils.sleep_state import (
+    SLEEP_STATE_FILE,
+    apply_trainer_sleep_state,
+    load_sleep_state,
+    save_sleep_state,
+    trainer_sleep_state,
+)
 from src.utils.per_sample_grad import (
     per_sample_grads,
     per_sample_squared_grad_norms,
@@ -132,6 +139,10 @@ class CustomTrainer(Trainer):
             else -1.0
         )
         self._sleep_batch_size = args.per_device_train_batch_size
+        # Sampler state read from a checkpoint before the sampler exists
+        # (HF loads the checkpoint in train() ahead of the dataloader);
+        # consumed by _get_train_sampler.
+        self._pending_sampler_state: Optional[dict] = None
 
         # Plasticity decay state (Method 2: online empirical Fisher protection).
         # Synaptic-Intelligence-style: Fisher is accumulated during wake at the
@@ -246,6 +257,17 @@ class CustomTrainer(Trainer):
                     utility_temperature_gain=self.sleep_mechanism_cfg.utility_temperature_gain,
                     utility_temperature_need=self.sleep_mechanism_cfg.utility_temperature_need,
                 )
+                if self._pending_sampler_state is not None:
+                    self._train_sampler.load_state_dict(self._pending_sampler_state)
+                    self._pending_sampler_state = None
+                    logger.info(
+                        "Restored sampler state: phase %s, fold %d, wake_pos %d, sleep_pos %d, buffer %d",
+                        self._train_sampler.phase,
+                        self._train_sampler.curr_fold,
+                        self._train_sampler.wake_pos,
+                        self._train_sampler.sleep_pos,
+                        len(self._train_sampler.replay_buffer),
+                    )
             else:
                 # We are not using the sleep mechanism, so we can use the default sampler.
                 if self.args.world_size <= 1:
@@ -754,16 +776,51 @@ class CustomTrainer(Trainer):
 
             self.tokenizer.save_pretrained(lm_model_dir)
 
+            # Wake/sleep bookkeeping HF does not checkpoint (see sleep_state.py).
+            if self.sleep_mechanism_cfg:
+                sampler = getattr(self, "_train_sampler", None)
+                sampler_state = sampler.state_dict() if sampler is not None else None
+                save_sleep_state(
+                    os.path.join(output_dir, SLEEP_STATE_FILE),
+                    trainer_sleep_state(self, sampler_state),
+                )
+
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
         super()._load_from_checkpoint(resume_from_checkpoint, model=model)
 
-        # load step count
+        # load step count (HF's trainer_state.json, which carries global_step)
         step_file = os.path.join(resume_from_checkpoint, "trainer_state.json")
         # reads from JSON file and restores step count
         if os.path.exists(step_file):
             with open(step_file, "r") as f:
                 state = json.load(f)
                 self.global_step = state.get("global_step", 0)
+
+        sleep_file = os.path.join(resume_from_checkpoint, SLEEP_STATE_FILE)
+        if self.sleep_mechanism_cfg and os.path.exists(sleep_file):
+            sleep_state = load_sleep_state(sleep_file)
+            apply_trainer_sleep_state(self, sleep_state)
+            sampler_state = sleep_state.get("sampler")
+            if sampler_state is not None:
+                if hasattr(self, "_train_sampler"):
+                    self._train_sampler.load_state_dict(sampler_state)
+                else:
+                    self._pending_sampler_state = sampler_state
+            logger.info(
+                "Resuming from %s: global_step %d, phase %s, fold %s, phase_steps %d, sleep steps/phase %d",
+                resume_from_checkpoint,
+                self.global_step,
+                sampler_state["phase"] if sampler_state else "?",
+                sampler_state["curr_fold"] if sampler_state else "?",
+                self.phase_steps,
+                self.max_steps_per_phase.get("SLEEP", -1),
+            )
+        elif self.sleep_mechanism_cfg:
+            logger.warning(
+                "No %s in %s: sampler restarts at fold 0 (checkpoint predates resume support)",
+                SLEEP_STATE_FILE,
+                resume_from_checkpoint,
+            )
 
     def _wrap_model(self, model):
         if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
@@ -804,7 +861,9 @@ class CustomTrainer(Trainer):
 
     def train(self, *args, resume_from_checkpoint=None, **kwargs):
         """
-        Override train to re-intialize phase steps.
+        Override train to re-initialize phase steps. On resume,
+        _load_from_checkpoint (called inside super().train) restores
+        phase_steps after this reset.
         """
         self.phase_steps = 0
         self._train_wall_start = time.time()

@@ -125,6 +125,13 @@ def main(cfg: BabyLMConfig):
                 id=cfg.experiment.resume_run_id,
                 resume="allow",
             )
+            # Let a restarted container find the run id (see AUTO_RESUME in
+            # scripts/k8s/*_job.yaml).
+            if wandb.run is not None:
+                run_dir = f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.project}/{cfg.experiment.name}"
+                os.makedirs(run_dir, exist_ok=True)
+                with open(os.path.join(run_dir, "wandb_run_id.txt"), "w") as f:
+                    f.write(wandb.run.id)
             if cfg.sleep_mechanism:
                 sleep_table = wandb.Table(
                     columns=[
@@ -218,6 +225,9 @@ def main(cfg: BabyLMConfig):
         greater_is_better=False,  # smaller perplexity is better
         ddp_find_unused_parameters=False,
         ddp_timeout=28800,  # 8 hours (default is 30 minutes)
+        # The SleepSampler restores its own position from sleep_state.pt;
+        # HF must not replay the first N batches of the dataloader on resume.
+        ignore_data_skip=True,
     )
 
     # Set up trainer

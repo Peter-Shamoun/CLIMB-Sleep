@@ -1,18 +1,22 @@
-# One-pod Nautilus Job for the synaptic-homeostasis smoke test under CLM.
+# One-pod Nautilus Job for smoke tests under CLM (SH path, resume path).
 # Mirrors the replay-batch-* Jobs (image, setup.sh, PVC, node exclusions).
 # Fill the __*__ placeholders from your env before applying; never commit
-# a rendered copy.
+# a rendered copy. __TAG__ names the Job / run (sh-clm-smoke-__TAG__) and
+# __SLEEP_CFG__ picks conf/sleep_mechanism/<cfg>.yaml (sh_smoke for SH).
 #   kubectl create -f <rendered>.yaml -n dsc-capstone-25-26
-#   kubectl get pods -n dsc-capstone-25-26 -l job-name=sh-smoke-clm-001
+#   kubectl get pods -n dsc-capstone-25-26 -l job-name=sh-smoke-clm-__TAG__
 #   kubectl logs -f <pod> -n dsc-capstone-25-26
+# Resume smoke: wait for checkpoint-<N>/rng_state.pth to appear on the PVC,
+# `kubectl delete pod <pod>`; the Job restarts it and the log must show
+# "Resume args: experiment.resume_checkpoint_path=..." and "Resuming from".
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: sh-smoke-clm-001
+  name: sh-smoke-clm-__TAG__
 spec:
   completions: 1
   parallelism: 1
-  backoffLimit: 1
+  backoffLimit: 4
   ttlSecondsAfterFinished: 86400
   template:
     spec:
@@ -32,7 +36,11 @@ spec:
         - name: WANDB_API_KEY
           value: "__WANDB_API_KEY__"
         - name: RUN_NAME
-          value: "sh-clm-smoke-001"
+          value: "sh-clm-smoke-__TAG__"
+        - name: SLEEP_CFG
+          value: "__SLEEP_CFG__"
+        - name: AUTO_RESUME
+          value: "1"
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -47,9 +55,11 @@ spec:
           . .venv/bin/activate
           export PATH="$(pwd)/.venv/bin:$PATH"
           which python
-          python train.py sleep_mechanism=sh_smoke dataset=strict_small task=base_clm model=gpt2_small \
+          RESUME_ARGS=$(python scripts/k8s/resume_args.py /mnt/data/checkpoints/sleep-consolidated-learning/$RUN_NAME)
+          echo "Resume args: ${RESUME_ARGS:-none}"
+          python train.py sleep_mechanism=$SLEEP_CFG dataset=strict_small task=base_clm model=gpt2_small \
             experiment.dry_run=true trainer.num_warmup_steps=50 \
-            experiment.name=$RUN_NAME experiment.group=sh-smoke
+            experiment.name=$RUN_NAME experiment.group=sh-smoke $RESUME_ARGS
           echo "Finished smoke test"
         volumeMounts:
         - mountPath: /mnt/data
