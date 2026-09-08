@@ -7,6 +7,11 @@
 #                        checkpoint-* of FINISHED runs whose dir name starts
 #                        with <prefix>. Only our own prefixes are accepted.
 #   ... prune-dry <prefix>  same, print only.
+#   ... prune-running <prefix> [keep]  for UNFINISHED runs: delete optimizer.pt
+#                        and lm_model/ from all but the `keep` (default 2) newest
+#                        complete checkpoints, so the run can still resume from
+#                        its latest checkpoint while older ones stop holding
+#                        ~130 MB each. prune-running-dry prints only.
 # The script is POSIX sh so it runs in busybox.
 set -eu
 
@@ -65,6 +70,43 @@ case "$cmd" in
                 step=$(basename "$ck" | sed 's/checkpoint-//')
                 [ "$step" = "$last" ] && continue
                 for victim in "$ck/optimizer.pt" "$ck/lm_model"; do
+                    [ -e "$victim" ] || continue
+                    if [ "$dry" = 1 ]; then
+                        echo "would delete: $victim"
+                    else
+                        rm -rf "$victim"
+                        echo "deleted: $victim"
+                    fi
+                done
+            done
+        done
+        df -h "$ROOT"
+        ;;
+    prune-running|prune-running-dry)
+        prefix="${2:-}"
+        keep="${3:-2}"
+        [ -n "$prefix" ] || usage_
+        if ! allowed "$prefix"; then
+            echo "refusing: prefix '$prefix' is not one of ours ($ALLOWED_PREFIXES)" >&2
+            exit 2
+        fi
+        dry=0
+        [ "$cmd" = "prune-running-dry" ] && dry=1
+        for run in $RUNS_GLOB/"$prefix"*/; do
+            [ -d "$run" ] || continue
+            if [ -d "$run/best_model" ]; then
+                echo "skip (finished; use prune): $run"
+                continue
+            fi
+            # complete checkpoints only (rng_state.pth is HF's last write), oldest first
+            complete=$(for ck in "$run"checkpoint-*/; do [ -f "$ck/rng_state.pth" ] && basename "$ck" | sed 's/checkpoint-//'; done | sort -n)
+            n=$(printf '%s\n' "$complete" | grep -c .)
+            if [ "$n" -le "$keep" ]; then
+                echo "keep all ($n complete): $run"
+                continue
+            fi
+            for step in $(printf '%s\n' "$complete" | head -n $((n - keep))); do
+                for victim in "$run/checkpoint-$step/optimizer.pt" "$run/checkpoint-$step/lm_model"; do
                     [ -e "$victim" ] || continue
                     if [ "$dry" = 1 ]; then
                         echo "would delete: $victim"
