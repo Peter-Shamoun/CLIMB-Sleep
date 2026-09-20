@@ -167,6 +167,7 @@ spec:
                 - k8s-chase-ci-07.calit2.optiputer.net
                 - hcc-nrp-shor-c6017.unl.edu
                 - hcc-chase-shor-c4709.unl.edu
+                - ry-gpu-15.sdsc.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:

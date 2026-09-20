@@ -52,6 +52,8 @@ spec:
           value: "__RUN_PREFIX__"
         - name: AUTO_RESUME
           value: "1"
+        - name: REQUIRE_RESUME
+          value: "0"
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -74,6 +76,9 @@ spec:
           # last complete checkpoint on the PVC; set AUTO_RESUME=0 to start over.
           RESUME_ARGS=$(python scripts/k8s/resume_args.py /mnt/data/checkpoints/sleep-consolidated-learning/$RUN_NAME)
           echo "Resume args: ${RESUME_ARGS:-none}"
+          # REQUIRE_RESUME=1 (relaunching interrupted runs): refuse to start a
+          # fresh run under an existing name when no checkpoint was found.
+          if [ "$REQUIRE_RESUME" = "1" ] && [ -z "$RESUME_ARGS" ]; then echo "no resumable checkpoint for $RUN_NAME"; exit 1; fi
           python train.py sleep_mechanism=sh_${ARM} task=$TASK model=$MODEL dataset=strict \
             experiment.seed=$SEED experiment.name=$RUN_NAME experiment.group=$GROUP $RESUME_ARGS
           echo "Finished Training!"
@@ -114,6 +119,7 @@ spec:
                 - k8s-chase-ci-07.calit2.optiputer.net
                 - hcc-nrp-shor-c6017.unl.edu
                 - hcc-chase-shor-c4709.unl.edu
+                - ry-gpu-15.sdsc.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:

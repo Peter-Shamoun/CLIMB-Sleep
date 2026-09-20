@@ -3,7 +3,7 @@
 # Each completion index is one seed (SEED = index + 1 + __SEED_OFFSET__; 0 for a fresh matrix,
 # e.g. 4 to relaunch only seed 5 with __SEEDS__=1); run names
 # baseline_clm_<seed>, W&B group baseline-clm. Mirrors sh_arms_job.yaml.
-# Placeholders: __SEEDS__, __HF_READ_TOKEN__, __HF_WRITE_TOKEN__,
+# Placeholders: __TAG__, __SEEDS__, __SEED_OFFSET__, __PVC__ (scl-replay-experiments-2 | -3), __HF_READ_TOKEN__, __HF_WRITE_TOKEN__,
 # __WANDB_API_KEY__. Never commit a rendered copy.
 #   kubectl create -f rendered.yaml -n dsc-capstone-25-26
 #   kubectl get pods -n dsc-capstone-25-26 -l job-name=sh-baseline-clm-001
@@ -40,6 +40,8 @@ spec:
           value: "baseline-clm"
         - name: AUTO_RESUME
           value: "1"
+        - name: REQUIRE_RESUME
+          value: "0"
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -62,6 +64,9 @@ spec:
           # last complete checkpoint on the PVC; set AUTO_RESUME=0 to start over.
           RESUME_ARGS=$(python scripts/k8s/resume_args.py /mnt/data/checkpoints/sleep-consolidated-learning/$RUN_NAME)
           echo "Resume args: ${RESUME_ARGS:-none}"
+          # REQUIRE_RESUME=1 (relaunching interrupted runs): refuse to start a
+          # fresh run under an existing name when no checkpoint was found.
+          if [ "$REQUIRE_RESUME" = "1" ] && [ -z "$RESUME_ARGS" ]; then echo "no resumable checkpoint for $RUN_NAME"; exit 1; fi
           python train.py sleep_mechanism=baseline_like_clm task=base_clm model=gpt2_small dataset=strict \
             experiment.seed=$SEED experiment.name=$RUN_NAME experiment.group=$GROUP $RESUME_ARGS
           echo "Finished Training!"
@@ -102,7 +107,8 @@ spec:
                 - k8s-chase-ci-07.calit2.optiputer.net
                 - hcc-nrp-shor-c6017.unl.edu
                 - hcc-chase-shor-c4709.unl.edu
+                - ry-gpu-15.sdsc.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
-          claimName: scl-replay-experiments-2
+          claimName: __PVC__
