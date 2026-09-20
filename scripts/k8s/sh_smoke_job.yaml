@@ -55,6 +55,10 @@ spec:
           . .venv/bin/activate
           export PATH="$(pwd)/.venv/bin:$PATH"
           which python
+          # Fail fast instead of silently training on CPU (Sep 20 2026: on
+          # patternlab torch.cuda.is_available() was False and four runs crawled
+          # at 5.8 s/step for 2.5 h before anyone noticed).
+          python -c "import sys, torch; ok = torch.cuda.is_available(); print('CUDA available:', ok); sys.exit(0 if ok else 1)"
           RESUME_ARGS=$(python scripts/k8s/resume_args.py /mnt/data/checkpoints/sleep-consolidated-learning/$RUN_NAME)
           echo "Resume args: ${RESUME_ARGS:-none}"
           python train.py sleep_mechanism=$SLEEP_CFG dataset=strict_small task=base_clm model=gpt2_small \
@@ -99,6 +103,7 @@ spec:
                 - hcc-nrp-shor-c6017.unl.edu
                 - hcc-chase-shor-c4709.unl.edu
                 - ry-gpu-15.sdsc.optiputer.net
+                - patternlab.calit2.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:

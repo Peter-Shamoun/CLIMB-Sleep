@@ -68,6 +68,10 @@ spec:
           . .venv/bin/activate
           export PATH="$(pwd)/.venv/bin:$PATH"
           which python
+          # Fail fast instead of silently training on CPU (Sep 20 2026: on
+          # patternlab torch.cuda.is_available() was False and four runs crawled
+          # at 5.8 s/step for 2.5 h before anyone noticed).
+          python -c "import sys, torch; ok = torch.cuda.is_available(); print('CUDA available:', ok); sys.exit(0 if ok else 1)"
           nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
           export SEED=$((JOB_COMPLETION_INDEX + 1 + SEED_OFFSET))
           export RUN_NAME=${RUN_PREFIX}${ARM}_${SEED}
@@ -120,6 +124,7 @@ spec:
                 - hcc-nrp-shor-c6017.unl.edu
                 - hcc-chase-shor-c4709.unl.edu
                 - ry-gpu-15.sdsc.optiputer.net
+                - patternlab.calit2.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
