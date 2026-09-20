@@ -39,3 +39,4 @@ trainer:
   eval_perplexity: True
   n_eval_samples: 100
   eval_batch_size: 4
+  dense_save_steps: [] # extra checkpoints at these exact steps (AoA runs)

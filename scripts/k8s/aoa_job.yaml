@@ -1,0 +1,136 @@
+# Multi-seed Nautilus Job for one age-of-acquisition (AoA) condition: a full
+# training run that also writes log-spaced early checkpoints through
+# trainer.dense_save_steps (src/utils/dense_checkpoint.py), because the interval
+# checkpoints start at 125M words, after the CDI words are already learned.
+# Each completion index is one seed (SEED = index + 1 + __SEED_OFFSET__).
+# Placeholders: __COND__ (epoch | random | loss; run-name label), __SLEEP_CFG__
+# (baseline_like_clm | sh_rand_off | sh_off), __TAG__ (Job suffix, e.g.
+# clm-epoch-001), __SEEDS__, __SEED_OFFSET__, __TASK__ (base_clm | base_mlm),
+# __MODEL__ (gpt2_small | roberta_pln_small), __DATASET__ (strict; strict_small
+# for a smoke test), __RUN_PREFIX__ (run name = <prefix><COND>_<seed>, e.g.
+# aoa_expmt_base_clm_), __GROUP__ (W&B group, aoa-dense), __DENSE_STEPS__
+# (comma-separated, e.g. 100,250,450), __PVC__, tokens as usual.
+# Never commit a rendered copy. Keep aoa_expmt_ OUT of ALLOWED_PREFIXES in
+# pvc_tools.sh: pruning these runs destroys the experiment.
+#   kubectl create -f rendered.yaml -n dsc-capstone-25-26
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sh-aoa-__TAG__
+spec:
+  completions: __SEEDS__
+  parallelism: __SEEDS__
+  completionMode: Indexed
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: gpu-container
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        env:
+        - name: HF_READ_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_WRITE_TOKEN
+          value: "__HF_WRITE_TOKEN__"
+        - name: HUGGINGFACE_HUB_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_HOME
+          value: /mnt/data/huggingface
+        - name: WANDB_API_KEY
+          value: "__WANDB_API_KEY__"
+        - name: COND
+          value: "__COND__"
+        - name: SLEEP_CFG
+          value: "__SLEEP_CFG__"
+        - name: DATASET
+          value: "__DATASET__"
+        - name: DENSE_STEPS
+          value: "__DENSE_STEPS__"
+        - name: SEED_OFFSET
+          value: "__SEED_OFFSET__"
+        - name: GROUP
+          value: "__GROUP__"
+        - name: TASK
+          value: "__TASK__"
+        - name: MODEL
+          value: "__MODEL__"
+        - name: RUN_PREFIX
+          value: "__RUN_PREFIX__"
+        - name: AUTO_RESUME
+          value: "1"
+        - name: REQUIRE_RESUME
+          value: "0"
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "Pod started with PyTorch + CUDA"
+          apt-get update --fix-missing && apt-get install -y --no-install-recommends git unzip
+          git clone https://github.com/Peter-Shamoun/CLIMB-Sleep.git
+          cd CLIMB-Sleep
+          git checkout main_refactor
+          git log --oneline -1
+          ./setup.sh /mnt/data/evaluation_data.zip
+          . .venv/bin/activate
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          which python
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+          export SEED=$((JOB_COMPLETION_INDEX + 1 + SEED_OFFSET))
+          export RUN_NAME=${RUN_PREFIX}${COND}_${SEED}
+          echo "Run: $RUN_NAME (cfg=$SLEEP_CFG seed=$SEED task=$TASK model=$MODEL dataset=$DATASET dense=$DENSE_STEPS)"
+          # A restarted container (node death, OOM, full disk) continues from the
+          # last complete checkpoint on the PVC; set AUTO_RESUME=0 to start over.
+          RESUME_ARGS=$(python scripts/k8s/resume_args.py /mnt/data/checkpoints/sleep-consolidated-learning/$RUN_NAME)
+          echo "Resume args: ${RESUME_ARGS:-none}"
+          # REQUIRE_RESUME=1 (relaunching interrupted runs): refuse to start a
+          # fresh run under an existing name when no checkpoint was found.
+          if [ "$REQUIRE_RESUME" = "1" ] && [ -z "$RESUME_ARGS" ]; then echo "no resumable checkpoint for $RUN_NAME"; exit 1; fi
+          # the list is quoted: unquoted brackets are a shell glob
+          python train.py sleep_mechanism=$SLEEP_CFG task=$TASK model=$MODEL dataset=$DATASET \
+            experiment.seed=$SEED experiment.name=$RUN_NAME experiment.group=$GROUP \
+            "trainer.dense_save_steps=[$DENSE_STEPS]" $RESUME_ARGS
+          echo "Finished Training!"
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - k8s-gpu-01.calit2.optiputer.net
+                - k8s-chase-ci-01.calit2.optiputer.net
+                - k8s-chase-ci-02.calit2.optiputer.net
+                - k8s-chase-ci-03.calit2.optiputer.net
+                - k8s-chase-ci-04.calit2.optiputer.net
+                - k8s-chase-ci-05.calit2.optiputer.net
+                - k8s-haosu-15.sdsc.optiputer.net
+                - k8s-haosu-18.sdsc.optiputer.net
+                - k8s-haosu-11.sdsc.optiputer.net
+                - k8s-ravi-01.calit2.optiputer.net
+                - chi-dgx-node02.csuchico.edu
+                - fiona8-1.calit2.uci.edu
+                - nautilus-ext-gpu01.fullerton.edu
+                - hcc-chase-shor-c4705.unl.edu
+                - k8s-chase-ci-07.calit2.optiputer.net
+                - hcc-nrp-shor-c6017.unl.edu
+                - hcc-chase-shor-c4709.unl.edu
+                - ry-gpu-15.sdsc.optiputer.net
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: __PVC__

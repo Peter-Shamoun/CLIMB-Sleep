@@ -87,6 +87,9 @@ class TrainerParams(DictConfig):
     eval_perplexity: bool
     n_eval_samples: int
     eval_batch_size: int
+    # extra checkpoints at exactly these global steps, on top of the interval
+    # saves (src/utils/dense_checkpoint.py); must stay last (only default field)
+    dense_save_steps: List[int] = field(default_factory=list)
 
 
 ### Curriculum learning parameter: can be either objective or data-driven ###

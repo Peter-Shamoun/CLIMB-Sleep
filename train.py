@@ -27,6 +27,7 @@ from src.trainer import CustomTrainer
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
 from src.utils.sleep_schedule import step_budget
+from src.utils.dense_checkpoint import DenseCheckpointCallback
 from src.utils.sleep_state import training_already_complete
 
 # type-checks dynamic config file
@@ -252,8 +253,8 @@ def main(cfg: BabyLMConfig):
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         sleep_table=sleep_table,
-        max_steps_per_phase = max_steps_per_phase
-        # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
+        max_steps_per_phase = max_steps_per_phase,
+        callbacks=[DenseCheckpointCallback(cfg.trainer.get("dense_save_steps") or [])],
     )
     resume_path = cfg.experiment.resume_checkpoint_path
     if resume_path and training_already_complete(resume_path, max_training_steps):
