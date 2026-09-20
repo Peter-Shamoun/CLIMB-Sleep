@@ -60,8 +60,14 @@ def stage(run_dir, staging_dir, tokens_per_word, batch, seq_len, only_final=Fals
         for f in MODEL_FILES:
             if os.path.exists(os.path.join(src, f)):
                 shutil.copy(os.path.join(src, f), dst)
+        # The run-level lm_model/ is only written when training ends; every
+        # checkpoint carries the same tokenizer files, so an unfinished run
+        # (e.g. the dense-checkpoint smoke test) falls back to its own copy.
+        tok_dir = os.path.join(run_dir, "lm_model")
+        if not os.path.exists(os.path.join(tok_dir, "tokenizer.json")):
+            tok_dir = os.path.join(src, "lm_model")
         for f in TOKENIZER_FILES:
-            p = os.path.join(run_dir, "lm_model", f)
+            p = os.path.join(tok_dir, f)
             if os.path.exists(p):
                 shutil.copy(p, dst)
         entries.append({

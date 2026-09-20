@@ -62,3 +62,23 @@ def test_hydra_list_values_and_bad_steps():
     assert DenseCheckpointCallback(OmegaConf.create([100, 250])).steps == {100, 250}
     with pytest.raises(ValueError):
         DenseCheckpointCallback([0, 100])
+
+
+def test_aoa_staging_takes_the_tokenizer_from_the_checkpoint_of_an_unfinished_run(tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts", "eval"))
+    import aoa_prepare
+
+    run = tmp_path / "run"
+    for step in (100, 250, 42_992, 43_000):
+        ck = run / f"checkpoint-{step}"
+        (ck / "lm_model").mkdir(parents=True)
+        (ck / "model.safetensors").write_text("w")
+        (ck / "config.json").write_text("{}")
+        (ck / "lm_model" / "tokenizer.json").write_text(f"tok-{step}")
+    entries = aoa_prepare.stage(str(run), str(tmp_path / "stage"), 1.409, 32, 128)
+    assert [e["step"] for e in entries] == [100, 250, 43_000]  # <100-step neighbours collapse
+    assert (tmp_path / "stage" / "100" / "tokenizer.json").read_text() == "tok-100"
+    (run / "lm_model").mkdir()
+    (run / "lm_model" / "tokenizer.json").write_text("tok-final")
+    aoa_prepare.stage(str(run), str(tmp_path / "stage2"), 1.409, 32, 128)
+    assert (tmp_path / "stage2" / "100" / "tokenizer.json").read_text() == "tok-final"
