@@ -1,4 +1,4 @@
-name: 'roberta_pre_layer_norm'
+name: 'roberta_pre_layer_norm_mlm'
 
 model_kwargs: {
   "num_hidden_layers": 12,

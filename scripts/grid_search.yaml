@@ -8,13 +8,16 @@ metric:
 
 parameters:
   sleep_mechanism.replay_ratio:
-    values: [0.2, 0.6, 1.0]
-  sleep_mechanism.sleep_max_steps:
-    values: [500, 1000, 2000]
+    values: [0.2, 0.4, 0.6]
+  sleep_mechanism.replay_decay_rate:
+    values: [0.8, 0.9, 0.99, 0.999]
+  sleep_mechanism.sleep_wake_ratio:
+    values: [1.0, 2.0, 5.0]
   sleep_mechanism.n_phases:
-    values: [1, 50, 100]
-  sleep_mechanism.contextualize_sleep:
-    values: [True, False]
+    # values: [50]
+    values: [50, 100, 365, 500]
+  # sleep_mechanism.contextualize_sleep:
+    # values: [True, False]
 
 command:
   - ${env}

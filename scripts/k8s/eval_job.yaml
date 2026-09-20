@@ -1,0 +1,174 @@
+# Offline BabyLM zero-shot eval Job (BLiMP, supplement, entity tracking, wug,
+# reading) over finished runs' final checkpoints. One Indexed Job; pod i
+# evaluates every i-th run of the RUNS list, so a handful of pods cover the
+# whole list with one setup.sh each.
+#
+# SOURCE=ckpt   : assemble the model from <run>/checkpoint-<max>/ (the trainer's
+#                 full save, head included) plus the tokenizer files from
+#                 <run>/lm_model/. Use this for every run whose lm_model/ was
+#                 exported before the head fix (all CLM runs up to Sep 6 2026).
+# SOURCE=lm_model: evaluate <run>/lm_model/ as is (May 2026 MLM runs).
+# MODE=fast | full | aoa : eval_zero_shot_fast.sh (fast_eval), eval_zero_shot.sh
+#                 (full BLiMP etc.), or the AoA_word surprisal extraction over
+#                 EVERY checkpoint of the run (scripts/eval/aoa_local.patch +
+#                 aoa_prepare.py; ignores SOURCE). Results land under
+#                 /mnt/data/eval_outputs/<run>/<step>/zero_shot/<backend>/ (fast),
+#                 .../<run>/<step>_full/zero_shot/<backend>/ (full), or
+#                 .../<run>/aoa/.../AoA_word/surprisal.json + aoa_steps.json (aoa).
+# Placeholders: __TAG__, __PODS__, __RUNS__ (space-separated run names),
+# __BACKEND__ (causal|mlm), __MODE__, __SOURCE__, __PVC__, tokens as usual.
+# Never commit a rendered copy.
+#   kubectl create -f rendered.yaml -n dsc-capstone-25-26
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sh-eval-__TAG__
+spec:
+  completions: __PODS__
+  parallelism: __PODS__
+  completionMode: Indexed
+  # UnexpectedAdmissionError pods count as failures; 6 was exhausted by two
+  # bad nodes on Sep 7 and the Job then killed its healthy pods.
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: gpu-container
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        env:
+        - name: HF_READ_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_WRITE_TOKEN
+          value: "__HF_WRITE_TOKEN__"
+        - name: HUGGINGFACE_HUB_TOKEN
+          value: "__HF_READ_TOKEN__"
+        - name: HF_HOME
+          value: /mnt/data/huggingface
+        - name: WANDB_API_KEY
+          value: "__WANDB_API_KEY__"
+        - name: PODS
+          value: "__PODS__"
+        - name: RUNS
+          value: "__RUNS__"
+        - name: BACKEND
+          value: "__BACKEND__"
+        - name: MODE
+          value: "__MODE__"
+        - name: SOURCE
+          value: "__SOURCE__"
+        - name: EVAL_OUT
+          value: /mnt/data/eval_outputs
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "Pod started with PyTorch + CUDA"
+          apt-get update --fix-missing && apt-get install -y --no-install-recommends git unzip
+          git clone https://github.com/Peter-Shamoun/CLIMB-Sleep.git
+          cd CLIMB-Sleep
+          git checkout main_refactor
+          git log --oneline -1
+          ./setup.sh /mnt/data/evaluation_data.zip
+          . .venv/bin/activate
+          export PATH="$(pwd)/.venv/bin:$PATH"
+          which python
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+          B=/mnt/data/checkpoints/sleep-consolidated-learning
+          P=$(pwd)/lib/evaluation-pipeline-2025
+          i=0
+          for RUN in $RUNS; do
+            if [ $((i % PODS)) -eq "$JOB_COMPLETION_INDEX" ]; then
+              echo "=== EVAL $RUN (pod $JOB_COMPLETION_INDEX, source=$SOURCE, mode=$MODE, backend=$BACKEND)"
+              ckpt=$(ls -d $B/$RUN/checkpoint-* 2>/dev/null | sed 's#.*checkpoint-##' | sort -n | tail -1)
+              [ -z "$ckpt" ] && ckpt=0
+              mkdir -p $EVAL_OUT/$RUN
+              # The pipeline names its results dir Path(model).stem, which strips
+              # ".1_0" from run names with dots; stage under a dot-free name.
+              SAFE=$(echo "$RUN" | tr . _)
+              if [ "$MODE" = "full" ] && [ -d $EVAL_OUT/$RUN/${ckpt}_full/zero_shot/$BACKEND/reading ]; then
+                echo "=== SKIP $RUN (full results present)"; i=$((i+1)); continue
+              fi
+              if [ "$MODE" = "fast" ] && [ -d $EVAL_OUT/$RUN/$ckpt/zero_shot/$BACKEND/reading ]; then
+                echo "=== SKIP $RUN (fast results present)"; i=$((i+1)); continue
+              fi
+              if [ "$MODE" = "aoa" ]; then
+                if [ ! -f $P/.aoa_patched ]; then
+                  git -C $P apply $(pwd)/scripts/eval/aoa_local.patch && touch $P/.aoa_patched
+                fi
+                S=/tmp/aoa_$SAFE; rm -rf $S
+                python scripts/eval/aoa_prepare.py $B/$RUN $S
+                cp $S/steps.json $EVAL_OUT/$RUN/aoa_steps.json
+                (cd $P && python -m evaluation_pipeline.AoA_word.run --model_name $S --backend $BACKEND \
+                  --track_name strict-small --word_path evaluation_data/full_eval/aoa/cdi_childes.json \
+                  --output_dir $EVAL_OUT/$RUN/aoa --steps_json $S/steps.json) 2>&1 | tee $EVAL_OUT/$RUN/aoa.log
+                rm -rf $S
+                echo "=== DONE $RUN aoa"
+                i=$((i+1)); continue
+              fi
+              if [ "$SOURCE" = "ckpt" ]; then
+                M=/tmp/m_$SAFE; rm -rf $M; mkdir -p $M
+                cp $B/$RUN/checkpoint-$ckpt/config.json $B/$RUN/checkpoint-$ckpt/model.safetensors $M/
+                cp $B/$RUN/checkpoint-$ckpt/generation_config.json $M/ 2>/dev/null || true
+                cp $B/$RUN/lm_model/tokenizer.json $B/$RUN/lm_model/tokenizer_config.json $M/
+                cp $B/$RUN/lm_model/special_tokens_map.json $M/ 2>/dev/null || true
+              else
+                M=$B/$RUN/lm_model
+              fi
+              if [ "$MODE" = "full" ]; then
+                (cd $P && ./eval_zero_shot.sh $M $BACKEND) 2>&1 | tee $EVAL_OUT/$RUN/${ckpt}_full.log
+                mkdir -p $EVAL_OUT/$RUN/${ckpt}_full
+                cp -r $P/results/*/main/zero_shot $EVAL_OUT/$RUN/${ckpt}_full/ || echo "WARN: no results dir to copy for $RUN"
+                rm -rf $P/results/*
+              else
+                (cd $P && ./eval_zero_shot_fast.sh $M $EVAL_OUT/$RUN/$ckpt $BACKEND) 2>&1 | tee $EVAL_OUT/$RUN/$ckpt.log
+              fi
+              [ "$SOURCE" = "ckpt" ] && rm -rf $M
+              echo "=== DONE $RUN step $ckpt"
+            fi
+            i=$((i+1))
+          done
+          echo "Finished eval pod $JOB_COMPLETION_INDEX"
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: storage-volume
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+          requests:
+            nvidia.com/gpu: "1"
+            memory: 8G
+            cpu: "2"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - k8s-gpu-01.calit2.optiputer.net
+                - k8s-chase-ci-01.calit2.optiputer.net
+                - k8s-chase-ci-02.calit2.optiputer.net
+                - k8s-chase-ci-03.calit2.optiputer.net
+                - k8s-chase-ci-04.calit2.optiputer.net
+                - k8s-chase-ci-05.calit2.optiputer.net
+                - k8s-haosu-15.sdsc.optiputer.net
+                - k8s-haosu-18.sdsc.optiputer.net
+                - k8s-haosu-11.sdsc.optiputer.net
+                - k8s-ravi-01.calit2.optiputer.net
+                - chi-dgx-node02.csuchico.edu
+                - fiona8-1.calit2.uci.edu
+                - nautilus-ext-gpu01.fullerton.edu
+                - hcc-chase-shor-c4705.unl.edu
+                - k8s-chase-ci-07.calit2.optiputer.net
+                - hcc-nrp-shor-c6017.unl.edu
+                - hcc-chase-shor-c4709.unl.edu
+                - ry-gpu-15.sdsc.optiputer.net
+      volumes:
+      - name: storage-volume
+        persistentVolumeClaim:
+          claimName: __PVC__

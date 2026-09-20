@@ -1,0 +1,35 @@
+# Synaptic homeostasis, stage 1: Taylor signals only (cheap: one scoring pass
+# per cycle). 2 signals x 2 shrink x 2 protect x 5 seeds = 40 runs per task.
+# Control: sleep_mechanism=sh_off with the same seeds (5 runs), launched
+# separately because sh_off has no plasticity_decay block to override.
+# Stage 2: sleep_mechanism=sh_fisher at the best stage-1 (shrink, protect),
+# same seeds, as the expensive (~6x) control.
+# Switch task with the `task` value below (base_clm / base_mlm) and the
+# matching model (gpt2_small / roberta_pln_small).
+program: train.py
+name: scl-sh-grid-clm
+project: sleep-consolidated-learning
+method: grid
+metric:
+  goal: minimize
+  name: eval/best_perplexity_mean
+
+parameters:
+  task:
+    values: [base_clm]
+  model:
+    values: [gpt2_small]
+  sleep_mechanism:
+    values: [sh_taylor_signed, sh_taylor_abs]
+  sleep_mechanism.plasticity_decay.shrink_factor:
+    values: [0.9, 0.95]
+  sleep_mechanism.plasticity_decay.protect_top_fraction:
+    values: [0.2, 0.5]
+  experiment.seed:
+    values: [1, 2, 3, 4, 5]
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}
