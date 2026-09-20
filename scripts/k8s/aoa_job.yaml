@@ -96,14 +96,17 @@ spec:
         - mountPath: /mnt/data
           name: storage-volume
         resources:
+          # Measured Sep 20 2026: training uses 0.4-1.1 CPU and 2.4-3.3 GB. NRP
+          # blocks accounts with > 4 pods outside 20-200% CPU / 20-150% memory
+          # of their requests, and limits must be within 20% of requests.
           limits:
             nvidia.com/gpu: "1"
-            memory: 8G
-            cpu: "2"
+            memory: 7G
+            cpu: "1200m"
           requests:
             nvidia.com/gpu: "1"
-            memory: 8G
-            cpu: "2"
+            memory: 6G
+            cpu: "1"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
