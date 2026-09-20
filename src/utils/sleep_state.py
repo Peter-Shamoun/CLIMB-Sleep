@@ -24,6 +24,9 @@ SLEEP_STATE_FILE = "sleep_state.pt"
 # HF writes rng_state.pth after the optimizer and scheduler in
 # _save_checkpoint, so its presence means the checkpoint is complete.
 COMPLETE_MARKER = "rng_state.pth"
+# HF skips a missing optimizer.pt silently and restarts Adam from fresh moments,
+# so a checkpoint trimmed by pvc_tools prune/prune-running is not resumable.
+OPTIMIZER_FILE = "optimizer.pt"
 
 
 def checkpoint_global_step(ckpt_dir: str) -> Optional[int]:
@@ -77,8 +80,9 @@ def load_sleep_state(path: str) -> Dict[str, Any]:
 
 
 def latest_resumable_checkpoint(run_dir: str) -> Optional[str]:
-    """Highest-numbered checkpoint-<step>/ that holds both the sleep state and
-    HF's completion marker; None when there is nothing to resume from."""
+    """Highest-numbered checkpoint-<step>/ that holds the sleep state, the
+    optimizer state and HF's completion marker; None when there is nothing to
+    resume from."""
     best_step, best_dir = -1, None
     for d in glob.glob(os.path.join(run_dir, "checkpoint-*")):
         m = re.search(r"checkpoint-(\d+)$", d)
@@ -86,6 +90,7 @@ def latest_resumable_checkpoint(run_dir: str) -> Optional[str]:
             continue
         if not (
             os.path.exists(os.path.join(d, SLEEP_STATE_FILE))
+            and os.path.exists(os.path.join(d, OPTIMIZER_FILE))
             and os.path.exists(os.path.join(d, COMPLETE_MARKER))
         ):
             continue

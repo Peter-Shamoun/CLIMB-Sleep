@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.data_curriculum.sleep_sampler import SleepSampler  # noqa: E402
 from src.utils.sleep_state import (  # noqa: E402
     COMPLETE_MARKER,
+    OPTIMIZER_FILE,
     SLEEP_STATE_FILE,
     apply_trainer_sleep_state,
     latest_resumable_checkpoint,
@@ -157,28 +158,41 @@ def test_trainer_state_round_trip_restores_phase_steps_and_sleep_length(tmp_path
 
 def test_latest_resumable_checkpoint_skips_incomplete_dirs(tmp_path):
     run = tmp_path / "run"
-    for step, complete, with_state in ((100, True, True), (200, True, True), (300, False, True), (400, True, False)):
+    # (step, rng marker, sleep state, optimizer); 500 mimics a checkpoint
+    # trimmed by pvc_tools prune-running
+    for step, complete, with_state, with_opt in (
+        (100, True, True, True), (200, True, True, True), (300, False, True, True),
+        (400, True, False, True), (500, True, True, False),
+    ):
         d = run / f"checkpoint-{step}"
         d.mkdir(parents=True)
         if complete:
             (d / COMPLETE_MARKER).write_text("x")
         if with_state:
             (d / SLEEP_STATE_FILE).write_text("x")
+        if with_opt:
+            (d / OPTIMIZER_FILE).write_text("x")
     assert latest_resumable_checkpoint(str(run)) == str(run / "checkpoint-200")
     assert latest_resumable_checkpoint(str(tmp_path / "missing")) is None
 
 
-def test_resume_overrides_need_run_id_and_a_complete_checkpoint(tmp_path):
+def test_resume_overrides_need_a_complete_checkpoint_but_not_a_run_id(tmp_path):
     run = tmp_path / "run"
     (run / "checkpoint-50").mkdir(parents=True)
     assert resume_overrides(str(run)) == ""
     (run / "wandb_run_id.txt").write_text("abc123\n")
     assert resume_overrides(str(run)) == ""  # checkpoint incomplete
-    (run / "checkpoint-50" / COMPLETE_MARKER).write_text("x")
-    (run / "checkpoint-50" / SLEEP_STATE_FILE).write_text("x")
-    expected = f"experiment.resume_checkpoint_path={run / 'checkpoint-50'} experiment.resume_run_id=abc123"
-    assert resume_overrides(str(run)) == expected
+    for name in (COMPLETE_MARKER, SLEEP_STATE_FILE, OPTIMIZER_FILE):
+        (run / "checkpoint-50" / name).write_text("x")
+    ckpt_arg = f"experiment.resume_checkpoint_path={run / 'checkpoint-50'}"
+    assert resume_overrides(str(run)) == f"{ckpt_arg} experiment.resume_run_id=abc123"
     assert resume_overrides(str(run), auto_resume="0") == ""
+    # Sep 8 2026: a full disk left a 0-byte wandb_run_id.txt; the checkpoint
+    # must still be resumed (in a new W&B run), not silently retrained.
+    (run / "wandb_run_id.txt").write_text("")
+    assert resume_overrides(str(run)) == ckpt_arg
+    (run / "wandb_run_id.txt").unlink()
+    assert resume_overrides(str(run)) == ckpt_arg
 
 
 def test_a_checkpoint_at_max_steps_means_training_is_complete(tmp_path):

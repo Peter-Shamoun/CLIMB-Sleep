@@ -21,17 +21,21 @@ from src.utils.sleep_state import latest_resumable_checkpoint  # noqa: E402
 def resume_overrides(run_dir: str, auto_resume: str = "1") -> str:
     if auto_resume != "1":
         return ""
-    id_file = os.path.join(run_dir, "wandb_run_id.txt")
-    if not os.path.isfile(id_file):
-        return ""
     ckpt = latest_resumable_checkpoint(run_dir)
     if ckpt is None:
         return ""
-    with open(id_file) as f:
-        run_id = f.read().strip()
-    if not run_id:
-        return ""
-    return f"experiment.resume_checkpoint_path={ckpt} experiment.resume_run_id={run_id}"
+    # The run id comes from wandb_run_id.txt; when it is missing or empty (a
+    # full disk truncated it on Sep 8 2026) the checkpoint is still resumed,
+    # in a new W&B run: the model matters more than W&B continuity.
+    id_file = os.path.join(run_dir, "wandb_run_id.txt")
+    run_id = ""
+    if os.path.isfile(id_file):
+        with open(id_file) as f:
+            run_id = f.read().strip()
+    out = f"experiment.resume_checkpoint_path={ckpt}"
+    if run_id:
+        out += f" experiment.resume_run_id={run_id}"
+    return out
 
 
 if __name__ == "__main__":

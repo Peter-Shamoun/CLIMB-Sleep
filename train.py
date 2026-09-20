@@ -109,11 +109,15 @@ def main(cfg: BabyLMConfig):
         if cfg.experiment.resume_checkpoint_path:
             resume_run_id = cfg.experiment.resume_run_id
             if resume_run_id is None:
-                raise RuntimeError(
-                    "resume_run_id must be set if resume_checkpoint_path is set"
+                # Resuming the model matters more than W&B continuity (Sep 8
+                # 2026: a full disk truncated wandb_run_id.txt and the restarts
+                # then trained from scratch). Start a fresh W&B run instead.
+                logger.warning(
+                    "resume_checkpoint_path set without resume_run_id: continuing in a NEW W&B run"
                 )
-            os.environ["WANDB_RUN_ID"] = resume_run_id
-            os.environ["WANDB_RESUME"] = "allow"
+            else:
+                os.environ["WANDB_RUN_ID"] = resume_run_id
+                os.environ["WANDB_RESUME"] = "allow"
 
         # Check if we're on process 0
         if int(os.environ.get("RANK", "0")) == 0:
@@ -131,8 +135,15 @@ def main(cfg: BabyLMConfig):
             if wandb.run is not None:
                 run_dir = f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.project}/{cfg.experiment.name}"
                 os.makedirs(run_dir, exist_ok=True)
-                with open(os.path.join(run_dir, "wandb_run_id.txt"), "w") as f:
-                    f.write(wandb.run.id)
+                # Atomic write: a failed write on a full disk must not leave an
+                # empty file behind (that blocks the next auto-resume).
+                id_path = os.path.join(run_dir, "wandb_run_id.txt")
+                try:
+                    with open(id_path + ".tmp", "w") as f:
+                        f.write(wandb.run.id)
+                    os.replace(id_path + ".tmp", id_path)
+                except OSError as exc:
+                    logger.warning("could not write %s: %s", id_path, exc)
             if cfg.sleep_mechanism:
                 sleep_table = wandb.Table(
                     columns=[
