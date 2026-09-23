@@ -126,6 +126,7 @@ spec:
                 - ry-gpu-15.sdsc.optiputer.net
                 - patternlab.calit2.optiputer.net
                 - k8s-haosu-22.sdsc.optiputer.net
+                - ry-gpu-04.sdsc.optiputer.net
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
