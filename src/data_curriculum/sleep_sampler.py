@@ -338,6 +338,40 @@ class SleepSampler(Sampler):
             )
         # Contextualization happens once, in switch_phase("SLEEP").
 
+    def refresh_scores(self, fresh: dict) -> dict:
+        """Replace the stored replay score of every candidate in ``fresh``
+        ({index: score}) and keep its decay factor. Called at the end of a WAKE
+        phase, before switch_phase("SLEEP"), when the trainer re-measures all
+        candidates under the current model (replay_rescore).
+
+        Returns diagnostics comparing the stale and fresh rankings: mean score
+        before and after, their Pearson correlation, and the fraction of the
+        stale top-k (k = the buffer size update_replay_buffer is about to
+        take, ranked by score x decay as strict does) that is still in the
+        fresh top-k.
+        """
+        assert self.phase == "WAKE", "refresh_scores must run before the switch to SLEEP"
+        idx = [i for i in fresh if i in self.wake_candidates]
+        if not idx:
+            return {}
+        stale = np.array([self.wake_candidates[i][0] for i in idx], dtype=np.float64)
+        factor = np.array([self.wake_candidates[i][1] for i in idx], dtype=np.float64)
+        new = np.array([float(fresh[i]) for i in idx], dtype=np.float64)
+        for i, s, f in zip(idx, new, factor):
+            self.wake_candidates[i] = (float(s), float(f))
+        k = max(1, int(len(self.wake_candidates) * self.replay_ratio))
+        k = min(k, len(idx))
+        top_stale = set(np.argpartition(-(stale * factor), k - 1)[:k].tolist())
+        top_fresh = set(np.argpartition(-(new * factor), k - 1)[:k].tolist())
+        corr = float(np.corrcoef(stale, new)[0, 1]) if len(idx) > 1 and stale.std() > 0 and new.std() > 0 else float("nan")
+        return {
+            "rescore/n": len(idx),
+            "rescore/mean_stale": float(stale.mean()),
+            "rescore/mean_fresh": float(new.mean()),
+            "rescore/pearson": corr,
+            "rescore/topk_overlap": len(top_stale & top_fresh) / k,
+        }
+
     def get_wake_max_steps(self):
         """
         Returns the max steps possible for this wake phase based on the size of the buffer.

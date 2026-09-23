@@ -20,6 +20,7 @@ from tqdm import tqdm
 
 # Model Training
 from transformers import (
+    DataCollatorForLanguageModeling,
     PreTrainedTokenizerFast,
     RobertaConfig,
     Trainer,
@@ -53,7 +54,7 @@ from src.synaptic_homeostasis import (
 )
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
-from src.utils.replay_score import per_sample_mean_token_loss
+from src.utils.replay_score import per_sample_mean_token_loss, rescore_losses
 from src.utils.sleep_schedule import sleep_steps_for_buffer
 from src.utils.sleep_state import (
     SLEEP_STATE_FILE,
@@ -139,6 +140,20 @@ class CustomTrainer(Trainer):
             else -1.0
         )
         self._sleep_batch_size = args.per_device_train_batch_size
+        # Stale-score test: re-measure every candidate's loss at WAKE->SLEEP.
+        self.replay_rescore = bool(
+            self.sleep_mechanism_cfg
+            and getattr(self.sleep_mechanism_cfg, "replay_rescore", False)
+        )
+        if self.replay_rescore and (
+            self.task_name != "clm"
+            or self.sleep_mechanism_cfg.replay_criteria != "loss"
+        ):
+            raise ValueError(
+                "replay_rescore needs task clm and replay_criteria loss; got "
+                f"{self.task_name!r} / {self.sleep_mechanism_cfg.replay_criteria!r}"
+            )
+        self._rescore_time_sec = 0.0
         # Sampler state read from a checkpoint before the sampler exists
         # (HF loads the checkpoint in train() ahead of the dataloader);
         # consumed by _get_train_sampler.
@@ -950,6 +965,22 @@ class CustomTrainer(Trainer):
                     batch_size=self.args.per_device_train_batch_size,
                 )
                 sampler.update_utility_scores(need_scores)
+            if self.replay_rescore:
+                _t0 = time.time()
+                # batch 128: the (batch, vocab, seq) logits are 0.5 GB in fp32
+                fresh = rescore_losses(
+                    unwrap_model(self.model),
+                    self.train_dataset.select_columns(["input_ids"]),
+                    list(sampler.wake_candidates.keys()),
+                    DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False),
+                    self.task_name,
+                    self.args.device,
+                    batch_size=128,
+                )
+                rescore_diag = sampler.refresh_scores(fresh)
+                self._rescore_time_sec += time.time() - _t0
+                logger.info("Rescored %d candidates in %.1f s: %s", len(fresh), time.time() - _t0, rescore_diag)
+                self.log({**rescore_diag, "time/rescore_sec": self._rescore_time_sec})
             # Finalize Fisher diagonal from the wake phase that just ended.
             if self._plasticity_decay_enabled:
                 _t0 = time.time()

@@ -1,0 +1,22 @@
+# Bounded-repeat sleep, STRICT arm with FRESH scores. Identical to
+# sh_rr_strict.yaml except replay_rescore: at every WAKE->SLEEP switch the loss
+# of every replay candidate is re-measured under the current model before the
+# top-k is taken, instead of ranking by the loss recorded when the sample was
+# trained on. With 3.5 repeats the over-replay spike is gone (Experiment 9), so
+# the remaining random-over-strict gap (2.18 PPL at n=3) is what this tests:
+# if stale scores make strict re-pick the same samples, fresh scores close it.
+# Cost: one forward pass over the candidate pool per cycle (k x 22,012 samples
+# in cycle k). CLM + loss criterion only (the trainer refuses anything else).
+
+wake_block_steps: 9999999
+sleep_wake_ratio: 9.0 # unused for the budget when replay_repeats > 0
+replay_repeats: 3.5
+replay_ratio: 0.1
+replay_strategy: "strict"
+replay_criteria: "loss"
+replay_rescore: True
+replay_decay_rate: 0.05334773969181028
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True
