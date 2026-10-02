@@ -26,6 +26,16 @@ def wake_samples_per_phase(wake_steps_per_phase: int, batch_size: int, fold_size
     return min(wake_steps_per_phase * batch_size, fold_size)
 
 
+def memory_stream_size(capacity: float, n_train: int) -> int:
+    """Sample count of a fixed-capacity memory stream holding ``capacity`` of
+    the ``n_train`` training samples; -1 (unbounded) when capacity <= 0."""
+    if capacity <= 0:
+        return -1
+    if capacity > 1:
+        raise ValueError(f"memory_stream_capacity is a fraction in (0, 1], got {capacity}")
+    return max(1, int(capacity * n_train))
+
+
 def buffer_size(k: int, wake_samples: int, replay_ratio: float) -> int:
     """Replay buffer after k wake phases: SleepSampler keeps every seen sample
     as a candidate and takes ``int(len(candidates) * replay_ratio)``."""

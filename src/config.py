@@ -202,6 +202,11 @@ class SleepMechanismParams(DictConfig):
     replay_decay_rate: float = 0.7
     # Minimum decay factor, to ensure older samples are never completely removed from consideration.
     min_decay_factor: float = 0.2
+    # Fixed-capacity memory stream: when > 0, the stream holds at most this
+    # fraction of the training set. At every WAKE->SLEEP switch the candidates
+    # are ranked by score x decay (as strict does) and all but the top
+    # capacity are deleted for good. <= 0 keeps every sample (unbounded).
+    memory_stream_capacity: float = -1.0
     # Number of context augmentations applied per batch
     n_augmentations: int = 40
     # Number of wake-sleep cycles

@@ -55,7 +55,7 @@ from src.synaptic_homeostasis import (
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity
 from src.utils.replay_score import per_sample_mean_token_loss, rescore_losses
-from src.utils.sleep_schedule import sleep_steps_for_buffer
+from src.utils.sleep_schedule import memory_stream_size, sleep_steps_for_buffer
 from src.utils.sleep_state import (
     SLEEP_STATE_FILE,
     apply_trainer_sleep_state,
@@ -154,6 +154,13 @@ class CustomTrainer(Trainer):
                 f"{self.task_name!r} / {self.sleep_mechanism_cfg.replay_criteria!r}"
             )
         self._rescore_time_sec = 0.0
+        # The bounded-repeat step budget assumes the stream grows by one fold
+        # per cycle (sleep_schedule.buffer_size), which a capped stream breaks.
+        if (
+            self.replay_repeats > 0
+            and float(getattr(self.sleep_mechanism_cfg, "memory_stream_capacity", -1.0)) > 0
+        ):
+            raise ValueError("memory_stream_capacity is not supported with replay_repeats > 0")
         # Sampler state read from a checkpoint before the sampler exists
         # (HF loads the checkpoint in train() ahead of the dataloader);
         # consumed by _get_train_sampler.
@@ -271,6 +278,10 @@ class CustomTrainer(Trainer):
                     replay_strategy=self.sleep_mechanism_cfg.replay_strategy,
                     utility_temperature_gain=self.sleep_mechanism_cfg.utility_temperature_gain,
                     utility_temperature_need=self.sleep_mechanism_cfg.utility_temperature_need,
+                    memory_stream_capacity=memory_stream_size(
+                        getattr(self.sleep_mechanism_cfg, "memory_stream_capacity", -1.0),
+                        len(self.train_dataset),
+                    ),
                 )
                 if self._pending_sampler_state is not None:
                     self._train_sampler.load_state_dict(self._pending_sampler_state)
@@ -1017,6 +1028,8 @@ class CustomTrainer(Trainer):
             "time/sh_shrink_sec": self._sh_time_sec["shrink"],
             "sleep/steps_per_phase": self.max_steps_per_phase["SLEEP"],
             "sleep/buffer_size": len(sampler.replay_buffer),
+            "sleep/stream_size": len(sampler.wake_candidates),
+            "sleep/stream_evicted": sampler.total_evicted,
         }
         timing["time/sh_total_sec"] = (
             timing["time/sh_score_sec"] + timing["time/sh_shrink_sec"]

@@ -29,6 +29,7 @@ class SleepSampler(Sampler):
         replay_strategy: str = "weighted",
         utility_temperature_gain: float = 1.0,
         utility_temperature_need: float = 1.0,
+        memory_stream_capacity: int = -1,
     ) -> None:
         """
         Args:
@@ -42,6 +43,9 @@ class SleepSampler(Sampler):
                 is decayed
             contextualize_sleep: Whether to apply contextualization during sleep,
             replay_strategy: Type of strategy to apply for Replay Buffer
+            memory_stream_capacity: Max number of candidates kept in the memory
+                stream; the rest are evicted for good at each WAKE->SLEEP
+                switch (see evict_to_capacity). -1 = unbounded.
         """
         self.dataset = dataset
         self.batch_size = batch_size
@@ -74,6 +78,8 @@ class SleepSampler(Sampler):
         self.utility_temperature_need = utility_temperature_need
         self.decay_rate = decay_rate # decays replay score so that older data is less likely to be sampled
         self.min_decay_factor = min_decay_factor # clamps decay rate so that older samples are not completely forgotten
+        self.memory_stream_capacity = memory_stream_capacity
+        self.total_evicted = 0
 
         self.phase = "WAKE"
         self.dataset_indices = list(range(len(dataset)))  # type: ignore
@@ -186,6 +192,7 @@ class SleepSampler(Sampler):
             # Transitioning WAKE -> SLEEP
             # Process wake_candidates to fill replay_buffer
             if self.wake_candidates:
+                self.evict_to_capacity()
                 self.update_replay_buffer()
                 if self.contextualize_sleep:
                     self.contextualized_chunks = self.contextualize_buffer()
@@ -237,6 +244,7 @@ class SleepSampler(Sampler):
             "wake_candidates_factor": cand_factor,
             "curr_wake_candidates": np.asarray([int(i) for i in self.curr_wake_candidates], dtype=np.int64),
             "replay_buffer": np.asarray([int(i) for i in self.replay_buffer], dtype=np.int64),
+            "total_evicted": int(self.total_evicted),
         }
 
     def load_state_dict(self, state: dict) -> None:
@@ -263,6 +271,7 @@ class SleepSampler(Sampler):
         }
         self.curr_wake_candidates = [int(i) for i in state["curr_wake_candidates"]]
         self.replay_buffer = [int(i) for i in state["replay_buffer"]]
+        self.total_evicted = int(state.get("total_evicted", 0))
         self.phase = str(state["phase"])
         self.curr_fold = int(state["curr_fold"])
         self.wake_pos = int(state["wake_pos"])
@@ -300,6 +309,23 @@ class SleepSampler(Sampler):
             flattened.extend(ordering)
 
         return flattened
+
+    def evict_to_capacity(self) -> int:
+        """Shrink the memory stream to memory_stream_capacity candidates by
+        keeping the highest score x decay (the ranking strict uses) and
+        deleting the rest permanently. Returns the number evicted."""
+        cap = self.memory_stream_capacity
+        if cap is None or cap <= 0 or len(self.wake_candidates) <= cap:
+            return 0
+        ranked = sorted(
+            self.wake_candidates.items(),
+            key=lambda item: item[1][0] * item[1][1],
+            reverse=True,
+        )
+        self.wake_candidates = dict(ranked[:cap])
+        n_evicted = len(ranked) - cap
+        self.total_evicted += n_evicted
+        return n_evicted
 
     def update_replay_buffer(self):
         """
