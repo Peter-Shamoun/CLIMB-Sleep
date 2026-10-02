@@ -117,6 +117,7 @@ spec:
                 - ry-gpu-04.sdsc.optiputer.net
                 - cph-dgx-node7.humboldt.edu
                 - cph-dgx-node8.humboldt.edu
+                - hcc-nrp-shor-c5825.unl.edu
       volumes:
       - name: storage-volume
         persistentVolumeClaim:
