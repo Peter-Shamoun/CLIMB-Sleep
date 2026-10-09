@@ -1,0 +1,20 @@
+\begin{table}[t!]
+\begin{adjustbox}{width=\textwidth}
+\centering
+\begin{tabular}{lllccccccccc}
+\toprule
+\textbf{Objective} & \textbf{Condition} & \textbf{n} & \ppl & \textbf{BLiMP} & \textbf{Supp} & \textbf{Entity} & \textbf{Wug-Adj} & \textbf{Wug-Past} & \textbf{Eye} & \textbf{SPR} \\
+\midrule
+\multirow{3}{*}{CLM} & \baseCond (reshuffled) & 10 & 54.19 ± 0.24 & 65.04 ± 0.45 & 51.40 ± 0.42 & 40.61 ± 0.70 & 0.624 ± 0.011 & 0.027 ± 0.026 & 5.02 ± 0.18 & 1.69 ± 0.06 \\
+& \textit{Bounded random, 3.5$\times$} & 10 & 51.49 ± 0.15 & 64.71 ± 0.50 & 53.68 ± 0.46 & 38.69 ± 2.09 & 0.610 ± 0.015 & 0.085 ± 0.018 & 5.28 ± 0.26 & 1.68 ± 0.08 \\
+& \textit{Bounded strict, 3.5$\times$} & 5 & 53.77 ± 0.11 & 64.54 ± 0.68 & 52.96 ± 0.88 & 42.76 ± 0.31 & 0.656 ± 0.019 & 0.176 ± 0.049 & 5.47 ± 0.34 & 1.76 ± 0.11 \\
+\midrule
+\multirow{3}{*}{MLM} & \baseCond (reshuffled) & 10 & 11.10 ± 0.07 & 62.79 ± 0.34 & 54.96 ± 0.87 & 39.44 ± 1.98 & 0.371 ± 0.019 & 0.103 ± 0.018 & 4.27 ± 0.09 & 2.44 ± 0.05 \\
+& \textit{Bounded random, 3.5$\times$} & 10 & 10.32 ± 0.02 & 64.07 ± 0.34 & 57.44 ± 0.63 & 41.40 ± 0.59 & 0.345 ± 0.018 & 0.122 ± 0.015 & 4.44 ± 0.10 & 2.52 ± 0.05 \\
+& \textit{Bounded strict, 3.5$\times$} & 10 & 10.29 ± 0.03 & 64.44 ± 0.29 & 58.12 ± 0.44 & 38.61 ± 1.11 & 0.367 ± 0.017 & 0.077 ± 0.016 & 4.66 ± 0.10 & 2.49 ± 0.06 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Bounded-repeat sleep (3.5 replays per buffer sample per sleep phase) and the reshuffled \baseCond baseline, mean $\pm$ SE across seeds ($n=10$ per row except CLM bounded strict, $n=5$). \ppl: held-out perplexity (lower is better). BLiMP: mean of the four BLiMP fields, fast pipeline. Supp: BLiMP supplement. Wug: Spearman $\rho_s$ with human ratings. Eye, SPR: reading-time predictivity, normalized $\Delta R^2 \times 100$ (higher is better).}
+\label{tab:bounded-repeats}
+\end{table}

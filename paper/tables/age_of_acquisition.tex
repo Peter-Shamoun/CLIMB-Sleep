@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrcc}
+\toprule
+Condition & $n$ & $\rho$(model, child) & SD \\
+\midrule
+\multicolumn{4}{c}{\emph{CLM (GPT-2)}} \\
+Epoch & 3 & $+0.076$ & $0.026$ \\
+Sleep, uniform replay & 3 & $+0.018$ & $0.040$ \\
+Sleep, loss-strict replay & 3 & $-0.064$ & $0.018$ \\
+Sleep, uniform, bounded repeats & 3 & $+0.034$ & $0.011$ \\
+Sleep, loss-strict, bounded repeats & 3 & $-0.021$ & $0.058$ \\
+\multicolumn{4}{c}{\emph{MLM (RoBERTa)}} \\
+Epoch & 3 & $+0.126$ & $0.038$ \\
+Sleep, uniform replay & 3 & $+0.109$ & $0.016$ \\
+Sleep, loss-strict replay & 3 & $+0.094$ & $0.033$ \\
+\bottomrule
+\end{tabular}
+\caption{Spearman correlation between model and child age of acquisition (settle-point definition), mean and SD over three seeds per condition.}
+\label{tab:aoa}
+\end{table}
