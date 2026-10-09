@@ -1,0 +1,22 @@
+# Smoke test for bounded-repeat sleep and for checkpoint resume (Sep 2026).
+# Four cycles of 100 wake steps on strict_small; with replay_repeats 3.5 and
+# replay_ratio 0.1 the sleep phases last 35 / 70 / 105 / 140 steps (buffer
+# 320 / 640 / 960 / 1280 of the 3,200 wake draws per phase), 750 steps total.
+# Under experiment.dry_run the trainer checkpoints at step 375 (inside wake
+# phase 4), which is where the resume smoke kills and restarts the pod:
+#   scripts/k8s/sh_smoke_job.yaml with __SLEEP_CFG__=sh_rr_smoke
+# Success = "Resume args: experiment.resume_checkpoint_path=.../checkpoint-375"
+# and "Resuming from ... phase WAKE, fold 3" in the restarted pod's log, and
+# the W&B run continuing under the same id to step 750.
+
+wake_block_steps: 100
+sleep_wake_ratio: 1.0 # unused for the budget when replay_repeats > 0
+replay_repeats: 3.5
+replay_ratio: 0.1
+replay_strategy: "strict"
+replay_criteria: "loss"
+replay_decay_rate: 0.1
+n_augmentations: 4
+n_phases: 4
+max_seq_length: 128
+contextualize_sleep: True

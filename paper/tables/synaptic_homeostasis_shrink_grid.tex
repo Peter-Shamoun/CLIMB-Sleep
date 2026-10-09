@@ -1,0 +1,17 @@
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{rrrrrr}
+\toprule
+\textbf{Shrink} & \textbf{Protect} & \textbf{PPL mean (SD)} & \textbf{vs.\ control} & \textbf{Holm $p$} & \textbf{BLiMP-fast} \\
+\midrule
+\multicolumn{2}{l}{No SH ($n=10$)} & 53.19 (0.19) & — & — & 63.22 \\
+0.90 & 50\% & 54.09 (0.37) & $+0.90$ & 0.085 & 63.01 \\
+0.90 & 20\% & 54.85 (0.11) & $+1.66$ & $<0.001$ & 63.21 \\
+0.80 & 50\% & 61.47 (0.40) & $+8.28$ & 0.002 & 61.81 \\
+0.80 & 20\% & 67.24 (0.46) & $+14.05$ & 0.001 & 62.27 \\
+\bottomrule
+\end{tabular}
+\caption{Synaptic homeostasis shrinkage grid, signed-Taylor importance, CLM loss / random / \replayratio $0.1$ cell. Control: same cell without synaptic homeostasis ($n=10$); SH arms $n=3$ each; Holm correction across the four arms. BLiMP: fast pipeline.}
+\label{tab:sh-dosage}
+\end{table}

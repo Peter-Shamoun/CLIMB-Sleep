@@ -27,6 +27,7 @@ decorator==5.2.1
 defusedxml==0.7.1
 dill==0.3.6
 executing==2.2.1
+faiss-cpu==1.8.0
 fastjsonschema==2.21.2
 filelock==3.20.0
 fqdn==1.5.1
@@ -79,7 +80,7 @@ networkx==3.4.2
 nltk==3.9.2
 notebook==7.5.3
 notebook_shim==0.2.4
-numpy==2.2.6
+numpy==1.26
 # nvidia-cublas-cu12==12.6.4.1
 # nvidia-cuda-cupti-cu12==12.6.80
 # # nvidia-cuda-nvrtc-cu12==12.6.77

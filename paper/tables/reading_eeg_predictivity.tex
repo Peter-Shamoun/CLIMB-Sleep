@@ -1,0 +1,16 @@
+\begin{table}[h]
+\centering
+\begin{tabular}{l@{\quad}r@{\,}l@{\quad}r@{\,}l@{\quad}r@{\,}l@{\quad}r@{\,}l}
+\toprule
+Condition & \multicolumn{2}{c}{N400} & \multicolumn{2}{c}{P600} & \multicolumn{2}{c}{Eye Tracking} & \multicolumn{2}{c}{SPR} \\
+\midrule
+EPOCH, fixed replay order ($n=10$) & 1.03 & (0.31) & 4.84 & (0.53) & 4.67 & (0.60) & 1.57 & (0.24) \\
+\textbf{EPOCH, reshuffled} ($n=10$) & \textbf{1.24} & \textbf{(0.26)} & \textbf{5.33} & \textbf{(0.34)} & \textbf{5.02} & \textbf{(0.58)} & \textbf{1.69} & \textbf{(0.18)} \\
+Sleep, fixed-length random ($n=10$) & 1.84 & (0.50) & 6.30 & (0.81) & 5.45 & (0.57) & 1.87 & (0.28) \\
+Sleep, fixed-length strict ($n=10$) & 2.24 & (0.52) & 7.08 & (0.67) & 6.11 & (0.61) & 1.94 & (0.27) \\
+\textbf{Sleep, bounded repeats} ($n=10$) & \textbf{1.55} & \textbf{(0.50)} & \textbf{5.66} & \textbf{(0.86)} & \textbf{5.28} & \textbf{(0.81)} & \textbf{1.68} & \textbf{(0.26)} \\
+\bottomrule
+\end{tabular}
+\caption{Reading-time and ERP predictivity, CLM, normalized $\Delta R^2 \times 100$ (higher is better), mean (SD) over ten seeds. Eye tracking: mean of four gaze-duration measures. SPR: self-paced reading.}
+\label{tab:psychometrics}
+\end{table}

@@ -1,0 +1,16 @@
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{llrrrrrr}
+\toprule
+\textbf{Arm} & \textbf{Signal} & \textbf{PPL mean} & \textbf{SD} & \textbf{vs.\ off} & \textbf{Welch $p$} & \textbf{BLiMP-fast} & \textbf{BLiMP SD} \\
+\midrule
+Off (control) & — & 55.78 & 0.07 & — & — & 62.53 & 0.66 \\
+Taylor signed & $-\overline{w \nabla L}$ & 55.74 & 0.20 & $-0.04$ & 0.79 & 64.94 & 1.44 \\
+Taylor abs & $|\overline{w \nabla L}|$ & 56.43 & 0.71 & $+0.65$ & 0.25 & 63.69 & 1.34 \\
+Fisher & $E[(\nabla L)^2]$ & 56.60 & 0.49 & $+0.82$ & 0.10 & 64.70 & 1.52 \\
+\bottomrule
+\end{tabular}
+\caption{Synaptic homeostasis importance signals at shrink $0.95$, protect top $20\%$ per tensor, CLM loss / strict / \replayratio $0.1$ cell, $n=3$ seeds per arm. PPL: held-out perplexity. BLiMP-fast: mean of the four BLiMP fields, fast pipeline. Welch $p$: two-sided vs the no-SH arm.}
+\label{tab:sh-arms}
+\end{table}

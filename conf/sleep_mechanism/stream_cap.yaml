@@ -1,0 +1,19 @@
+# Fixed-capacity memory stream (Oct 2026 sanity check: is the sleep gain an
+# artifact of a memory that keeps every sample?). Same cell as the
+# decay_expmt_*_0.1_50 / sanity-checks runs: default.yaml + strict / loss,
+# replay_ratio 0.2, replay decay 0.1, floor 0.2. Before every sleep phase the
+# stream keeps the top memory_stream_capacity x |train| candidates by
+# score x decay and deletes the rest for good. Sweep the capacity on the CLI:
+#   python train.py sleep_mechanism=stream_cap sleep_mechanism.memory_stream_capacity=0.125
+wake_block_steps: 9999999
+sleep_wake_ratio: 9.0
+replay_ratio: 0.2
+replay_strategy: "strict"
+replay_criteria: "loss"
+replay_decay_rate: 0.1
+min_decay_factor: 0.2
+memory_stream_capacity: 0.25
+n_augmentations: 40
+n_phases: 50
+max_seq_length: 128
+contextualize_sleep: True

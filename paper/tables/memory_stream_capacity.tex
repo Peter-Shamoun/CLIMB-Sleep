@@ -1,0 +1,21 @@
+\begin{table*}
+\centering
+\small
+\begin{adjustbox}{width=\textwidth}
+\begin{tabular}{l|rr|r|rr|r}
+\toprule
+\textbf{Capacity} & \multicolumn{2}{c|}{\textbf{\textsc{CLM}}} & \textbf{\textsc{CLM}} & \multicolumn{2}{c|}{\textbf{\textsc{MLM}}} & \textbf{\textsc{MLM}} \\
+& PPL (SD) & $\Delta$ vs uncapped & Full BLiMP (SD) & PPL (SD) & $\Delta$ vs uncapped & Full BLiMP (SD) \\
+\midrule
+Reshuffled epoch & $54.19(0.76)$ & — & $64.83(1.45)$ & $11.10(0.22)$ & — & $62.92(0.98)$ \\
+Uncapped & $53.12(0.17)$ & — & $64.06(0.17)$ & $9.99(0.12)$ & — & $64.86(1.05)$ \\
+$1/2$ & $53.02(0.27)$ & $-0.09$ & $63.24(1.09)$ & $9.98(0.07)$ & $-0.00$ & $64.45(1.05)$ \\
+$1/4$ & $53.16(0.54)$ & $+0.04$ & $63.00(0.56)$ & $10.06(0.06)$ & $+0.07$ & $64.17(0.35)$ \\
+$1/8$ & $54.69(0.61)$ & $+1.57^*$ & $62.62(0.68)$ & $10.09(0.15)$ & $+0.10$ & $64.28(1.42)$ \\
+$1/16$ & $58.38(0.35)$ & $+5.26^{**}$ & $62.81(1.19)$ & $10.36(0.05)$ & $+0.38$ & $64.60(0.97)$ \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Fixed-capacity memory stream: final perplexity and full-pipeline BLiMP (mean of the four fields) by memory capacity (fraction of the training set), mean (SD). Epoch row $n=10$ seeds, capacity rows $n=3$. $\Delta$: difference from the uncapped run. $^*$Holm $p = 0.17$; $^{**}$Holm $p = 0.002$.}
+\label{tab:stream-cap-ppl}
+\end{table*}

@@ -16,27 +16,6 @@ if TYPE_CHECKING:
     from src.trainer import CustomTrainer
 
 
-def prepare_dataset_for_ppl_inference(
-    trainer: CustomTrainer,
-    dataset: Dataset,
-) -> Dataset:
-    """
-    Preprocess dataset to remove columns that are not used by the perplexity computation's
-    forward pass through the trainer model.
-
-    Args:
-        * trainer: a trainer object that was used for training the model
-        * dataset: the dataset that will be scored for perplexity
-    """
-    ignore_columns = trainer._get_ignore_columns(dataset)
-    # NOTE: ignore columns should contain special_tokens_mask because these are
-    # always returned by the fast pretrained tokenizer
-    assert "special_tokens_mask" in ignore_columns
-    ignore_columns.remove("special_tokens_mask")
-
-    return dataset.remove_columns(ignore_columns)
-
-
 def compute_trainer_perplexity(
     batch: Dict[str, torch.Tensor],
     tokenizer: PreTrainedTokenizerFast,
@@ -71,19 +50,21 @@ def compute_trainer_perplexity(
 
     # (Batch, #repetitions dimension, seq len)
     input_ids = input_ids.unsqueeze(1).to(trainer.args.device)
+    # If MLM, mask input tokens one-by-one
+    if trainer.task_name == "mlm":
+        repeat_ids = input_ids.repeat([1, seq_len, 1])
 
-    repeat_ids = input_ids.repeat([1, seq_len, 1])
+        mask = (
+            torch.ones(input_ids.size(-1), device=trainer.args.device).diag(0)
+        ).repeat([batch_size, 1, 1])
 
-    mask = (
-        torch.ones(input_ids.size(-1), device=trainer.args.device).diag(0)
-    ).repeat([batch_size, 1, 1])
+        # Setting the diagonal for each batch to MASK token id (0)
+        masked_input = repeat_ids.masked_fill(mask == 1, mask_idx)
 
-    # Setting the diagonal for each batch to MASK token id (0)
-    masked_input = repeat_ids.masked_fill(mask == 1, mask_idx)
-
-    # For each batch, set the labels to be the original input ids (all others to ignore_index=-100)
-    labels = repeat_ids.masked_fill(masked_input != mask_idx, -100)
-
+        # For each batch, set the labels to be the original input ids (all others to ignore_index=-100)
+        labels = repeat_ids.masked_fill(masked_input != mask_idx, -100)
+    else:
+        labels = input_ids
     # For each batch, if the label is a special token, set it to -100 (ignore_index)
     special_tokens_mask = (
         batch["special_tokens_mask"].unsqueeze(1).to(trainer.args.device)
@@ -92,28 +73,31 @@ def compute_trainer_perplexity(
 
     # combining the repeated input ids dimension (2nd dim) with the batch dim (1st dim)
     # NOTE this gives an effective batch size = batch_size * seq_len
-    masked_input = masked_input.view(-1, seq_len)
+    eval_input = masked_input if trainer.task_name == "mlm" else input_ids
+    eval_input = eval_input.view(-1, seq_len)
     labels = labels.view(-1, seq_len)
 
-    # NOTE: The 'mlm' unit is always in the objective curriculum
-    # (this is checked by ObjectiveCurriculum.__init__)
-    loss = trainer.objective_curriculum.units["mlm"].compute_loss(
+    loss = trainer.compute_loss(
         trainer.model,
         {},  # We don't provide a standard batch of data
-        override_input_ids=masked_input,
-        override_lables=labels,
+        override_input_ids=eval_input,
+        override_labels=labels,
         loss_kwargs={
             "reduction": "none",
         },
+        inference=True,
     )
 
-    # loss is a tensor (batch * seq_len, seq_len), where in the second dimension only at most one
-    # token should be non-zero (the masked token). We sum over the second dimension to get the
-    # loss for each token in each batch
-    loss = loss.sum(dim=-1)
+    # If mlm, then loss is a tensor (batch * seq_len, seq_len), where in the 
+    # second dimension only at most one token should be non-zero (the masked 
+    # token). We have to reshape the losses to be (batch, seq_len)
+    if trainer.task_name == "mlm":
+        #  We sum over the second dimension to get the loss for each token in each batch
+        loss = loss.sum(dim=-1)
 
-    # Now loss is a vector of (batch * seq_len) length, we reshape it to (batch, seq_len)
-    loss = loss.view(batch_size, seq_len)
+        # Now loss is a vector of (batch * seq_len) length, we reshape it to (batch, seq_len)
+        loss = loss.view(batch_size, seq_len)
+    
     # we can now sum over the second dimension to get the loss for each sample
     summed_loss = loss.sum(dim=-1)
 

@@ -3,8 +3,7 @@
 # Or override individual values via command line
 
 wake_block_steps: 9999999 # 1000
-sleep_max_steps: 1000
-sleep_loss_threshold: 0.5
+sleep_wake_ratio: 5.0 # num eq. epochs - 1
 replay_ratio: 0.3
 replay_strategy: "random"
 # plasticity_decay_type: lr_decay

@@ -1,8 +1,9 @@
-"""Train a RoBERTa model on the BabyLM dataset."""
+"""Train a sleep model on the BabyLM dataset."""
 
 import logging
 import os
 import argparse
+import math
 
 # config-related imports
 import hydra
@@ -25,6 +26,9 @@ from src.tokenizer import load_tokenizer
 from src.trainer import CustomTrainer
 from src.utils.data import DatasetPreprocessor
 from src.utils.setup import set_seed
+from src.utils.sleep_schedule import step_budget
+from src.utils.dense_checkpoint import DenseCheckpointCallback
+from src.utils.sleep_state import training_already_complete
 
 # type-checks dynamic config file
 cs = ConfigStore.instance()
@@ -72,9 +76,6 @@ def main(cfg: BabyLMConfig):
     if len(tokenizer) != model.get_input_embeddings().weight.shape[0]:
         logger.info("Model and Tokenizer Mismatch - resizing model token embeddings")
         model.resize_token_embeddings(len(tokenizer))
-    # assert (
-    #     tokenizer.vocab_size == model.config.vocab_size
-    # ), f"Tokenizer and model vocab size mismatch: {tokenizer.vocab_size}{model.config.vocab_size}"
 
     # Preprocess data
     logger.info("Preprocessing data")
@@ -98,10 +99,10 @@ def main(cfg: BabyLMConfig):
     if cfg.experiment.offline_run:
         os.environ["WANDB_DISABLED"] = "true"
         os.environ["WANDB_MODE"] = "disabled"
-        curriculum_learning_table = None
+        sleep_table = None
     else:
         # These environment variables get picked up by Trainer
-        os.environ["WANDB_PROJECT"] = cfg.experiment.group
+        os.environ["WANDB_PROJECT"] = cfg.experiment.project
         os.environ["WANDB_ENTITY"] = cfg.experiment.entity
         wandb.config = OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=True
@@ -109,49 +110,101 @@ def main(cfg: BabyLMConfig):
         if cfg.experiment.resume_checkpoint_path:
             resume_run_id = cfg.experiment.resume_run_id
             if resume_run_id is None:
-                raise RuntimeError(
-                    "resume_run_id must be set if resume_checkpoint_path is set"
+                # Resuming the model matters more than W&B continuity (Sep 8
+                # 2026: a full disk truncated wandb_run_id.txt and the restarts
+                # then trained from scratch). Start a fresh W&B run instead.
+                logger.warning(
+                    "resume_checkpoint_path set without resume_run_id: continuing in a NEW W&B run"
                 )
-            os.environ["WANDB_RUN_ID"] = resume_run_id
-            os.environ["WANDB_RESUME"] = "allow"
+            else:
+                os.environ["WANDB_RUN_ID"] = resume_run_id
+                os.environ["WANDB_RESUME"] = "allow"
 
         # Check if we're on process 0
         if int(os.environ.get("RANK", "0")) == 0:
             wandb.init(
                 entity=cfg.experiment.entity,
-                project=cfg.experiment.group,
+                project=cfg.experiment.project,
+                group=cfg.experiment.group,
                 name=cfg.experiment.name,
                 config=wandb.config,  # type: ignore
                 id=cfg.experiment.resume_run_id,
                 resume="allow",
             )
-        else:
-            curriculum_learning_table = None
+            # Let a restarted container find the run id (see AUTO_RESUME in
+            # scripts/k8s/*_job.yaml).
+            if wandb.run is not None:
+                run_dir = f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.project}/{cfg.experiment.name}"
+                os.makedirs(run_dir, exist_ok=True)
+                # Atomic write: a failed write on a full disk must not leave an
+                # empty file behind (that blocks the next auto-resume).
+                id_path = os.path.join(run_dir, "wandb_run_id.txt")
+                try:
+                    with open(id_path + ".tmp", "w") as f:
+                        f.write(wandb.run.id)
+                    os.replace(id_path + ".tmp", id_path)
+                except OSError as exc:
+                    logger.warning("could not write %s: %s", id_path, exc)
+            if cfg.sleep_mechanism:
+                sleep_table = wandb.Table(
+                    columns=[
+                        "global_step",
+                        "phase_step",
+                        "phase_num",
+                        "replay_samples",
+                        # "losses",
+                    ]
+                )
+            else:
+                sleep_table = None
 
     # Set up training arguments
-    # TODO: If we are using wandb sweeps, note that we will need to think about how we store/
-    # initialize the name of the current experiment so that it doesn't interfere with the name
-    # of other experiments, and also so that we can store checkpoints of that run on HF hub;
-    # alternatively maybe we use ray tune which is natively supported by Trainer
+    # set up max steps
+    max_training_steps = cfg.trainer.max_training_steps
+    max_steps_per_phase = {}
     if cfg.sleep_mechanism:
-        theoretical_max_steps = int((cfg.sleep_mechanism.wake_block_steps 
-                                + cfg.sleep_mechanism.sleep_max_steps) 
-                                * cfg.sleep_mechanism.n_phases)
-        empirical_max_steps = int((len(train_dataset) 
-                                   // cfg.trainer.batch_size)
-                                  + (cfg.sleep_mechanism.sleep_max_steps 
-                                     * cfg.sleep_mechanism.n_phases))
-        logger.info("Theretical max steps: %d", theoretical_max_steps)
-        logger.info("Empirical max steps: %d", empirical_max_steps)
-        max_training_steps = min(theoretical_max_steps, empirical_max_steps)
-    else:
-        max_training_steps = cfg.trainer.max_training_steps
+        replay_repeats = float(getattr(cfg.sleep_mechanism, "replay_repeats", -1.0))
+        budget = step_budget(
+            n_train=len(train_dataset),
+            batch_size=cfg.trainer.batch_size,
+            n_phases=cfg.sleep_mechanism.n_phases,
+            wake_block_steps=cfg.sleep_mechanism.wake_block_steps,
+            sleep_wake_ratio=cfg.sleep_mechanism.sleep_wake_ratio,
+            max_training_steps=max_training_steps,
+            replay_ratio=cfg.sleep_mechanism.replay_ratio,
+            replay_repeats=replay_repeats,
+        )
+        total_wake_steps = budget["total_wake_steps"]
+        wake_steps_per_phase = budget["wake_steps_per_phase"]
+        # Under bounded repeats this is the FIRST sleep phase; the trainer
+        # re-sizes every later one from the realized buffer.
+        sleep_max_steps_per_phase = budget["sleep_steps_per_phase"]
+        max_training_steps = budget["max_training_steps"]
+        if replay_repeats > 0:
+            logger.info(
+                "Bounded-repeat sleep: %.2f repeats per buffer sample, %d total sleep steps"
+                % (replay_repeats, budget["total_sleep_steps"])
+            )
+        
+        if sleep_max_steps_per_phase < 1:
+            min_steps = (total_wake_steps
+                        + cfg.sleep_mechanism.n_phases)
+            logger.info("Too few steps for training! Min steps: %d" % min_steps)
+            raise ValueError("Too few steps for training! Min steps: %d" % min_steps)
+        logger.info("Wake steps/phase: %d" % wake_steps_per_phase)
+        logger.info("Sleep steps/phase: %d" % sleep_max_steps_per_phase)
+        logger.info("Sleep/Wake ratio: %f" % (sleep_max_steps_per_phase / wake_steps_per_phase))
+        logger.info("Total max steps: %d" % max_training_steps)
+        max_steps_per_phase = {
+            "SLEEP": sleep_max_steps_per_phase,
+            "WAKE": wake_steps_per_phase
+        }
         
     logging_steps = (max_training_steps 
                      // (100 if cfg.experiment.dry_run else 1000))
     logging_steps = logging_steps if logging_steps > 1 else max_training_steps
     training_args = TrainingArguments(
-        output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",
+        output_dir=f"{cfg.experiment.output_dir}/checkpoints/{cfg.experiment.project}/{cfg.experiment.name}",
         # overwrite_output_dir=False,
         do_train=True,
         do_eval=True,
@@ -171,20 +224,23 @@ def main(cfg: BabyLMConfig):
         logging_steps=logging_steps,
         run_name=cfg.experiment.name,
         report_to=["wandb"]
-        if not cfg.experiment.offline_run
-        else None,  # wandb deactivated for offline runs
+            if not cfg.experiment.offline_run
+            else [],  # wandb deactivated for offline runs
         save_strategy="steps",
         hub_strategy="every_save",
         push_to_hub=False,
         hub_model_id=None,
         hub_token=os.environ["HF_WRITE_TOKEN"],
-        dataloader_drop_last=(cfg.data_curriculum is not None or cfg.sleep_mechanism is not None),
+        dataloader_drop_last=(cfg.sleep_mechanism is not None),
         remove_unused_columns=False,
         load_best_model_at_end=True,
         metric_for_best_model="eval_perplexity_mean",
         greater_is_better=False,  # smaller perplexity is better
         ddp_find_unused_parameters=False,
         ddp_timeout=28800,  # 8 hours (default is 30 minutes)
+        # The SleepSampler restores its own position from sleep_state.pt;
+        # HF must not replay the first N batches of the dataloader on resume.
+        ignore_data_skip=True,
     )
 
     # Set up trainer
@@ -196,19 +252,20 @@ def main(cfg: BabyLMConfig):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
-        curriculum_learning_table=None,
-        # callbacks=[SleepCallback(cfg.sleep_mechanism.n_phases)],
+        sleep_table=sleep_table,
+        max_steps_per_phase = max_steps_per_phase,
+        callbacks=[DenseCheckpointCallback(cfg.trainer.get("dense_save_steps") or [])],
     )
-    # dl = trainer.get_train_dataloader()
-    # dl.sampler.switch_phase("SLEEP")
-    # batch = next(iter(dl))
-    # print(batch.keys())
-    # print("Masked input_ids:\n", batch["input_ids"])
-    # print("Labels:\n", batch["labels"])
-    # exit()
-    if not cfg.experiment.resume_checkpoint_path:
-        trainer.evaluate()  # Initial model evaluation
-    trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
+    resume_path = cfg.experiment.resume_checkpoint_path
+    if resume_path and training_already_complete(resume_path, max_training_steps):
+        # Restarted after training finished (e.g. the final eval crashed):
+        # load the final weights and skip straight to the evaluation below.
+        logger.info("Checkpoint %s is at max_steps %d; skipping training", resume_path, max_training_steps)
+        trainer._load_from_checkpoint(resume_path)
+    else:
+        if not resume_path:
+            trainer.evaluate()  # Initial model evaluation
+        trainer.train(resume_from_checkpoint=resume_path)
 
     logger.info("Training complete!")
     
@@ -225,11 +282,4 @@ def main(cfg: BabyLMConfig):
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='Generate text using language models via LM Studio API')
-    # parser.add_argument('--config_path', type=str, required=True,
-    #                     help='Path to the Hydra config file')
-    # args = parser.parse_args()
-    # # Load the config file using Hydra
-    # cfg = hydra.compose(config_name=args.config_path)
-    # main(cfg)
     main()
